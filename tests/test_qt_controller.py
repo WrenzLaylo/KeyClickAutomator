@@ -5,6 +5,7 @@ from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtTest import QSignalSpy, QTest
 
 import qt_controller
+from engine import Action, RunSettings, save_profile
 from qt_controller import ActionListModel, AutomatorController
 
 
@@ -104,4 +105,18 @@ def test_failed_hotkey_replacement_keeps_known_good_listener(monkeypatch):
     assert old_listener.stopped is False
     assert controller.runSettings["startHotkey"] == "f6"
     controller._hotkeys_enabled = False
+    controller.shutdown()
+
+
+def test_open_profile_exposes_sequence_name_and_new_sequence_resets_it(monkeypatch, tmp_path):
+    path = tmp_path / "Morning routine.kca.json"
+    save_profile(path, [Action("key", value="a")], RunSettings())
+    monkeypatch.setattr(qt_controller.QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+
+    controller = AutomatorController(start_hotkeys=False)
+    assert controller.currentProfileName == "Untitled sequence"
+    controller.openProfile()
+    assert controller.currentProfileName == "Morning routine"
+    controller.clearActions()
+    assert controller.currentProfileName == "Untitled sequence"
     controller.shutdown()

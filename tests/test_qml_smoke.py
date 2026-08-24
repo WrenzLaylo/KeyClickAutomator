@@ -45,3 +45,32 @@ def test_inspector_tab_selection_pill_slides_between_tabs():
     assert pill.property("x") > start_x + 50
     window.close()
     controller.shutdown()
+
+
+def test_workspace_navigation_hover_state_is_isolated_per_button():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    buttons = [window.findChild(QObject, f"workspaceNav_{name}") for name in ("open", "save", "new")]
+    assert all(button is not None for button in buttons)
+    buttons[0].setProperty("pointerHover", True)
+    _app.processEvents()
+    assert [button.property("pointerHover") for button in buttons] == [True, False, False]
+    window.close()
+    controller.shutdown()
+
+
+def test_added_actions_replace_empty_state_with_visible_sequence_cards():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    empty_state = window.findChild(QObject, "sequenceEmptyState")
+    action_list = window.findChild(QObject, "actionList")
+    run_status = window.findChild(QObject, "runStatusMessage")
+    assert empty_state is not None and action_list is not None and run_status is not None
+    controller.addAction({"kind": "key", "value": "space"})
+    QTest.qWait(80)
+    assert action_list.property("count") == 1
+    assert empty_state.property("visible") is False
+    assert action_list.property("visible") is True
+    assert run_status.property("text") == "Ready when you are"
+    window.close()
+    controller.shutdown()

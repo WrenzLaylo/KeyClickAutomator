@@ -9,7 +9,7 @@ from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
-from qt_controller import AutomatorController
+from qt_controller import APP_VERSION, AutomatorController
 
 
 def resource_root() -> Path:
@@ -42,7 +42,7 @@ def main() -> int:
     os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
     app = create_application(sys.argv)
     app.setApplicationName("KeyClick Automator")
-    app.setApplicationVersion("3.0.0")
+    app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("KeyClick Automator")
     app.setWindowIcon(QIcon(str(resource_root() / "assets" / "app.ico")))
     app.setFont(QFont("Inter", 10))

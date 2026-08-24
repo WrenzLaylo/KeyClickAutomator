@@ -36,7 +36,9 @@ ApplicationWindow {
     readonly property color violet: "#7454F6"
     readonly property color green: "#148A5B"
     readonly property color red: "#D33C54"
+    readonly property color redSoft: "#FFF0F3"
     readonly property color amber: "#B76812"
+    readonly property color successSoft: "#E9F7F1"
 
     FontLoader { id: interRegular; source: "../assets/fonts/Inter-Regular.ttf" }
     FontLoader { id: interMedium; source: "../assets/fonts/Inter-Medium.ttf" }
@@ -71,10 +73,14 @@ ApplicationWindow {
         property bool danger: false
         property bool quiet: false
         property string leading: ""
+        property bool pointerHover: false
         implicitHeight: 42
         implicitWidth: 112
         padding: 12
         hoverEnabled: true
+        HoverHandler {
+            onHoveredChanged: control.pointerHover = hovered
+        }
         font.family: interSemiBold.name || root.font.family
         font.pixelSize: 13
         font.weight: Font.DemiBold
@@ -100,7 +106,7 @@ ApplicationWindow {
             radius: 12
             color: !control.enabled ? root.surface2
                  : control.down ? (control.primary ? "#0049C9" : root.surface3)
-                 : control.hovered ? (control.primary ? root.blueHover : control.danger ? "#FDECEF" : root.surface3)
+                 : control.pointerHover ? (control.primary ? root.blueHover : control.danger ? "#FDECEF" : root.surface3)
                  : control.primary ? root.blue : control.quiet ? "transparent" : control.danger ? "#FFF2F4" : root.surface2
             border.width: control.visualFocus ? 2 : 0
             border.color: root.blue
@@ -206,13 +212,13 @@ ApplicationWindow {
                         color: root.blue
                         layer.enabled: true
                         layer.effect: SoftShadow {}
-                        Text {
-                            anchors.centerIn: parent
-                            text: "K"
-                            color: "white"
-                            font.family: interBold.name || root.font.family
-                            font.pixelSize: 18
-                            font.weight: Font.Bold
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 5
+                            source: "../assets/app-logo.png"
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
                         }
                     }
                     Column {
@@ -228,27 +234,38 @@ ApplicationWindow {
 
                 FormLabel { visible: !root.compactNav; text: "WORKSPACE"; Layout.leftMargin: 4; Layout.topMargin: 8 }
 
-                Repeater {
-                    model: [
-                        {icon: "↗", title: "Open profile", action: "open"},
-                        {icon: "↓", title: "Save profile", action: "save"},
-                        {icon: "+", title: "New sequence", action: "new"}
-                    ]
-                    delegate: KButton {
-                        required property var modelData
-                        Layout.fillWidth: true
-                        implicitHeight: 42
-                        text: root.compactNav ? "" : modelData.title
-                        leading: modelData.icon
-                        quiet: true
-                        ToolTip.visible: hovered && root.compactNav
-                        ToolTip.text: modelData.title
-                        onClicked: {
-                            if (modelData.action === "open") controller.openProfile()
-                            else if (modelData.action === "save") controller.saveProfile()
-                            else controller.clearActions()
-                        }
-                    }
+                KButton {
+                    objectName: "workspaceNav_open"
+                    Layout.fillWidth: true
+                    implicitHeight: 42
+                    text: root.compactNav ? "" : "Open profile"
+                    leading: "↗"
+                    quiet: true
+                    ToolTip.visible: pointerHover && root.compactNav
+                    ToolTip.text: "Open profile"
+                    onClicked: controller.openProfile()
+                }
+                KButton {
+                    objectName: "workspaceNav_save"
+                    Layout.fillWidth: true
+                    implicitHeight: 42
+                    text: root.compactNav ? "" : "Save profile"
+                    leading: "↓"
+                    quiet: true
+                    ToolTip.visible: pointerHover && root.compactNav
+                    ToolTip.text: "Save profile"
+                    onClicked: controller.saveProfile()
+                }
+                KButton {
+                    objectName: "workspaceNav_new"
+                    Layout.fillWidth: true
+                    implicitHeight: 42
+                    text: root.compactNav ? "" : "New sequence"
+                    leading: "+"
+                    quiet: true
+                    ToolTip.visible: pointerHover && root.compactNav
+                    ToolTip.text: "New sequence"
+                    onClicked: controller.clearActions()
                 }
 
                 Item { Layout.fillHeight: true }
@@ -329,7 +346,7 @@ ApplicationWindow {
                             font.weight: Font.Bold
                         }
                         Text {
-                            text: "Design precise keyboard and pointer routines."
+                            text: controller.currentProfileName + "  ·  " + controller.summary
                             color: root.ink2
                             font.family: interRegular.name || root.font.family
                             font.pixelSize: 12
@@ -405,7 +422,8 @@ ApplicationWindow {
                     layer.effect: MultiEffect { shadowEnabled: true; shadowColor: "#120B1730"; shadowBlur: 0.45; shadowVerticalOffset: 4 }
 
                     Column {
-                        visible: controller.actionModel.rowCount() === 0
+                        objectName: "sequenceEmptyState"
+                        visible: actionList.count === 0
                         anchors.centerIn: parent
                         width: Math.min(420, parent.width - 56)
                         spacing: 12
@@ -430,6 +448,7 @@ ApplicationWindow {
 
                     ListView {
                         id: actionList
+                        objectName: "actionList"
                         visible: count > 0
                         anchors.fill: parent
                         anchors.margins: 12
@@ -448,14 +467,27 @@ ApplicationWindow {
                             width: ListView.view.width
                             height: 74
                             radius: 15
-                            color: controller.selectedIndex === actionIndex ? root.blueSoft : hover.hovered ? "#F6F8FC" : "#FAFBFD"
-                            border.width: controller.selectedIndex === actionIndex ? 1 : 0
-                            border.color: "#BCD1FF"
+                            color: controller.selectedIndex === actionIndex ? "#E4EDFF" : hover.hovered ? "#F2F5FA" : "#FAFBFD"
+                            border.width: 1
+                            border.color: controller.selectedIndex === actionIndex ? "#8CB1FF" : hover.hovered ? "#DDE4EE" : "#EEF1F5"
                             opacity: enabled ? 1 : 0.48
                             scale: tap.pressed ? 0.992 : 1
                             Behavior on color { ColorAnimation { duration: 130 } }
                             Behavior on scale { NumberAnimation { duration: 90 } }
                             HoverHandler { id: hover }
+                            Rectangle {
+                                id: selectedStripe
+                                visible: controller.selectedIndex === actionCard.actionIndex
+                                width: 4
+                                radius: 2
+                                color: root.blue
+                                anchors.left: parent.left
+                                anchors.leftMargin: 4
+                                anchors.top: parent.top
+                                anchors.topMargin: 10
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 10
+                            }
                             TapHandler {
                                 id: tap
                                 onTapped: {
@@ -481,7 +513,12 @@ ApplicationWindow {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 3
-                                    Text { Layout.fillWidth: true; text: actionCard.title; elide: Text.ElideRight; color: root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 13 }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text { text: "Sequence " + (actionCard.actionIndex + 1); color: controller.selectedIndex === actionCard.actionIndex ? root.blue : root.ink3; font.family: interSemiBold.name || root.font.family; font.pixelSize: 10; font.letterSpacing: 0.4 }
+                                        Text { Layout.fillWidth: true; text: actionCard.title; elide: Text.ElideRight; color: root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 13 }
+                                    }
                                     Text { Layout.fillWidth: true; text: actionCard.subtitle; elide: Text.ElideRight; color: root.ink3; font.family: interRegular.name || root.font.family; font.pixelSize: 11 }
                                 }
                                 Switch {
@@ -522,8 +559,9 @@ ApplicationWindow {
                             spacing: 4
                             FormLabel { text: "RUN STATUS" }
                             Text {
+                                objectName: "runStatusMessage"
                                 Layout.fillWidth: true
-                                text: controller.running ? (controller.progress < 0 ? "Looping until you stop it" : "Automation is active") : (controller.actionModel.rowCount() ? "Ready when you are" : "Add an action to begin")
+                                text: controller.running ? (controller.progress < 0 ? "Looping until you stop it" : "Automation is active") : (actionList.count > 0 ? "Ready when you are" : "Add an action to begin")
                                 elide: Text.ElideRight
                                 color: root.ink2
                                 font.family: interMedium.name || root.font.family
@@ -548,7 +586,7 @@ ApplicationWindow {
                                 Behavior on width { NumberAnimation { duration: 180 } }
                             }
                         }
-                        KButton { text: "Stop"; danger: true; enabled: controller.running; implicitWidth: 82; onClicked: controller.stopRun() }
+                        KButton { text: "Stop"; leading: "■"; danger: true; enabled: controller.running; implicitWidth: 94; onClicked: controller.stopRun() }
                         KButton { text: controller.running ? "Running" : "Start"; leading: controller.running ? "●" : "▶"; primary: true; enabled: !controller.running; implicitWidth: root.layoutMode === "compact" ? 96 : 116; onClicked: controller.startRun() }
                     }
                 }
@@ -687,16 +725,95 @@ ApplicationWindow {
                                 return {kind: kindValue(), value: valueField.text, x: xField.text, y: yField.text, x2: x2Field.text, y2: y2Field.text, amount: amountField.text, duration: durationField.text, repeats: repeatsField.text, delay: delayField.text, enabled: true}
                             }
 
-                            KButton { Layout.fillWidth: true; text: root.editorIndex >= 0 ? "Editing action " + (root.editorIndex + 1) : "New action"; leading: root.editorIndex >= 0 ? "✦" : "+"; quiet: true; onClicked: editor.reset() }
+                            KButton { Layout.fillWidth: true; text: root.editorIndex >= 0 ? "Editing action " + (root.editorIndex + 1) : "New action"; leading: root.editorIndex >= 0 ? "✦" : "+"; onClicked: editor.reset() }
                             FormLabel { text: "ACTION TYPE"; Layout.topMargin: 6 }
                             ComboBox {
                                 id: actionType
+                                objectName: "actionTypePicker"
                                 Layout.fillWidth: true
                                 implicitHeight: 44
                                 model: ["Key press", "Hotkey", "Type text", "Left click", "Right click", "Double click", "Middle click", "Scroll", "Drag"]
                                 font.family: interMedium.name || root.font.family
                                 font.pixelSize: 13
-                                background: Rectangle { radius: 11; color: "#F8F9FC"; border.width: parent.activeFocus ? 2 : 1; border.color: parent.activeFocus ? root.blue : root.line }
+                                leftPadding: 13
+                                rightPadding: 42
+                                contentItem: Text {
+                                    text: actionType.displayText
+                                    color: root.ink
+                                    font: actionType.font
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
+                                indicator: Text {
+                                    x: actionType.width - width - 14
+                                    y: (actionType.height - height) / 2
+                                    text: "⌄"
+                                    color: root.ink2
+                                    font.family: interSemiBold.name || root.font.family
+                                    font.pixelSize: 20
+                                    rotation: actionType.popup.visible ? 180 : 0
+                                    Behavior on rotation { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                }
+                                background: Rectangle {
+                                    radius: 11
+                                    color: actionType.hovered || actionType.activeFocus ? "#FFFFFF" : "#F8F9FC"
+                                    border.width: actionType.activeFocus || actionType.popup.visible ? 2 : 1
+                                    border.color: actionType.activeFocus || actionType.popup.visible ? root.blue : actionType.hovered ? "#BFC9D8" : root.line
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                                }
+                                delegate: ItemDelegate {
+                                    id: option
+                                    required property var modelData
+                                    required property int index
+                                    width: actionType.width - 12
+                                    height: 40
+                                    leftPadding: 12
+                                    highlighted: actionType.highlightedIndex === index
+                                    contentItem: Text {
+                                        text: option.modelData
+                                        color: option.highlighted ? root.blue : root.ink
+                                        font.family: option.highlighted ? interSemiBold.name : interMedium.name
+                                        font.pixelSize: 13
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: Rectangle {
+                                        radius: 9
+                                        color: option.highlighted ? root.blueSoft : option.hovered ? "#F1F4F9" : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                    }
+                                    onClicked: {
+                                        actionType.currentIndex = index
+                                        actionType.popup.close()
+                                    }
+                                }
+                                popup: Popup {
+                                    objectName: "actionTypePopup"
+                                    parent: Overlay.overlay
+                                    x: actionType.mapToItem(Overlay.overlay, 0, 0).x
+                                    y: actionType.mapToItem(Overlay.overlay, 0, actionType.height + 6).y
+                                    z: 100
+                                    width: actionType.width
+                                    implicitHeight: Math.min(contentItem.implicitHeight + 12, 380)
+                                    padding: 6
+                                    clip: true
+                                    contentItem: ListView {
+                                        clip: true
+                                        implicitHeight: contentHeight
+                                        model: actionType.popup.visible ? actionType.delegateModel : null
+                                        currentIndex: actionType.highlightedIndex
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        ScrollIndicator.vertical: ScrollIndicator {}
+                                    }
+                                    background: Rectangle {
+                                        radius: 14
+                                        color: root.surface
+                                        border.width: 1
+                                        border.color: root.line
+                                        layer.enabled: true
+                                        layer.effect: SoftShadow {}
+                                    }
+                                }
                             }
 
                             FormLabel { visible: !editor.mouseAction; text: editor.kindValue() === "text" ? "TEXT TO TYPE" : "KEY OR SHORTCUT"; Layout.topMargin: 7 }
@@ -844,7 +961,9 @@ ApplicationWindow {
         width: Math.min(380, toastText.implicitWidth + 54)
         height: 48
         radius: 14
-        color: "#F2171A21"
+        color: toast.tone === "error" ? root.redSoft : toast.tone === "success" ? root.successSoft : root.blueSoft
+        border.width: 1
+        border.color: toast.tone === "error" ? "#F3B8C2" : toast.tone === "success" ? "#A9DFC9" : "#B9CEFA"
         anchors.horizontalCenter: parent.horizontalCenter
         y: visible ? parent.height - 76 : parent.height + 16
         z: 30
@@ -857,8 +976,8 @@ ApplicationWindow {
         Row {
             anchors.centerIn: parent
             spacing: 9
-            Rectangle { width: 8; height: 8; radius: 4; color: toast.tone === "error" ? "#FF6B7C" : toast.tone === "success" ? "#46D49A" : "#8AB4FF"; anchors.verticalCenter: parent.verticalCenter }
-            Text { id: toastText; text: toast.message; color: "white"; font.family: interMedium.name || root.font.family; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+            Rectangle { width: 8; height: 8; radius: 4; color: toast.tone === "error" ? root.red : toast.tone === "success" ? root.green : root.blue; anchors.verticalCenter: parent.verticalCenter }
+            Text { id: toastText; text: toast.message; color: toast.tone === "error" ? root.red : toast.tone === "success" ? root.green : root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
         }
         Timer { id: toastTimer; interval: 2600; onTriggered: toast.opacity = 0 }
     }

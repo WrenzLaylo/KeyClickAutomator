@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QFileDialog
 from engine import HOTKEY_NAMED_KEYS, Action, AutomationRunner, RunSettings, load_profile, save_profile
 
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 
 
 class ActionListModel(QAbstractListModel):
@@ -116,8 +116,9 @@ class ActionListModel(QAbstractListModel):
             "drag": "↗",
         }.get(kind, "•")
 
-    def refresh(self) -> None:
+    def mutate(self, callback) -> None:
         self.beginResetModel()
+        callback()
         self.endResetModel()
 
 
@@ -129,6 +130,7 @@ class AutomatorController(QObject):
     statusChanged = Signal()
     progressChanged = Signal()
     runSettingsChanged = Signal()
+    currentProfileNameChanged = Signal()
     toast = Signal(str, str)
     positionCaptured = Signal(int, int, int)
     actionKeyCaptured = Signal(str)
@@ -152,6 +154,7 @@ class AutomatorController(QObject):
         self._listener: keyboard.GlobalHotKeys | None = None
         self._capture_listener: keyboard.Listener | None = None
         self._run_settings = RunSettings()
+        self._current_profile_name = "Untitled sequence"
         self._hotkeys_enabled = start_hotkeys
         self.progressFromWorker.connect(self._handle_progress)
         self.finishedFromWorker.connect(self._finish_run)
@@ -162,9 +165,24 @@ class AutomatorController(QObject):
         if start_hotkeys:
             self._restart_hotkeys()
 
-    @Property(object, constant=True)
+    @Property(QObject, constant=True)
     def actionModel(self):
         return self._model
+
+    @Property(str, notify=currentProfileNameChanged)
+    def currentProfileName(self) -> str:
+        return self._current_profile_name
+
+    def _set_current_profile(self, path: str | None) -> None:
+        name = Path(path).name if path else ""
+        if name.lower().endswith(".kca.json"):
+            name = name[:-9]
+        elif name.lower().endswith(".json"):
+            name = name[:-5]
+        name = name or "Untitled sequence"
+        if name != self._current_profile_name:
+            self._current_profile_name = name
+            self.currentProfileNameChanged.emit()
 
     @Property(str, notify=summaryChanged)
     def summary(self) -> str:
@@ -251,7 +269,6 @@ class AutomatorController(QObject):
         )
 
     def _notify_actions(self) -> None:
-        self._model.refresh()
         self.actionsChanged.emit()
         self.summaryChanged.emit()
 
@@ -263,7 +280,7 @@ class AutomatorController(QObject):
         except (ValueError, TypeError) as exc:
             self.toast.emit(str(exc), "error")
             return
-        self.actions.append(action)
+        self._model.mutate(lambda: self.actions.append(action))
         self._selected_index = len(self.actions) - 1
         self._notify_actions()
         self.selectedIndexChanged.emit()
@@ -280,14 +297,14 @@ class AutomatorController(QObject):
         except (ValueError, TypeError) as exc:
             self.toast.emit(str(exc), "error")
             return
-        self.actions[index] = action
+        self._model.mutate(lambda: self.actions.__setitem__(index, action))
         self._notify_actions()
         self.toast.emit("Action updated", "success")
 
     @Slot(int)
     def deleteAction(self, index: int) -> None:
         if 0 <= index < len(self.actions):
-            self.actions.pop(index)
+            self._model.mutate(lambda: self.actions.pop(index))
             self._selected_index = min(index, len(self.actions) - 1)
             self._notify_actions()
             self.selectedIndexChanged.emit()
@@ -295,7 +312,8 @@ class AutomatorController(QObject):
     @Slot(int)
     def duplicateAction(self, index: int) -> None:
         if 0 <= index < len(self.actions):
-            self.actions.insert(index + 1, copy.deepcopy(self.actions[index]))
+            duplicate = copy.deepcopy(self.actions[index])
+            self._model.mutate(lambda: self.actions.insert(index + 1, duplicate))
             self._selected_index = index + 1
             self._notify_actions()
             self.selectedIndexChanged.emit()
@@ -304,7 +322,9 @@ class AutomatorController(QObject):
     def moveAction(self, index: int, delta: int) -> None:
         target = index + delta
         if 0 <= index < len(self.actions) and 0 <= target < len(self.actions):
-            self.actions[index], self.actions[target] = self.actions[target], self.actions[index]
+            def swap() -> None:
+                self.actions[index], self.actions[target] = self.actions[target], self.actions[index]
+            self._model.mutate(swap)
             self._selected_index = target
             self._notify_actions()
             self.selectedIndexChanged.emit()
@@ -312,14 +332,15 @@ class AutomatorController(QObject):
     @Slot(int, bool)
     def setActionEnabled(self, index: int, enabled: bool) -> None:
         if 0 <= index < len(self.actions):
-            self.actions[index].enabled = enabled
+            self._model.mutate(lambda: setattr(self.actions[index], "enabled", enabled))
             self._notify_actions()
 
     @Slot()
     def clearActions(self) -> None:
         if self._running:
             return
-        self.actions.clear()
+        self._model.mutate(self.actions.clear)
+        self._set_current_profile(None)
         self._selected_index = -1
         self._notify_actions()
         self.selectedIndexChanged.emit()
@@ -475,6 +496,7 @@ class AutomatorController(QObject):
                 path += ".kca.json"
             try:
                 save_profile(path, self.actions, self._run_settings)
+                self._set_current_profile(path)
                 self.toast.emit(f"Saved {Path(path).name}", "success")
             except OSError as exc:
                 self.toast.emit(str(exc), "error")
@@ -488,7 +510,9 @@ class AutomatorController(QObject):
             actions, settings = load_profile(path)
             if self._hotkeys_enabled and not self._install_hotkeys(settings):
                 return
-            self.actions, self._run_settings = actions, settings
+            self._model.mutate(lambda: setattr(self, "actions", actions))
+            self._run_settings = settings
+            self._set_current_profile(path)
             self._selected_index = 0 if actions else -1
             self._notify_actions()
             self.selectedIndexChanged.emit()

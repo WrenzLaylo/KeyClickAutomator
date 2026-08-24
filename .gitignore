@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+build/
+dist/
+release/
+installer-smoke*/
+installer-smoke*.log
+
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+*.kca.json

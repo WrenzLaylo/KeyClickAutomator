@@ -1,0 +1,184 @@
+import json
+import threading
+from pathlib import Path
+
+import pytest
+
+from engine import Action, AutomationRunner, RunSettings, load_profile, save_profile
+
+
+class FakeBackend:
+    def __init__(self):
+        self.calls = []
+
+    def press(self, key):
+        self.calls.append(("press", key))
+
+    def hotkey(self, *keys):
+        self.calls.append(("hotkey", *keys))
+
+    def write(self, text, interval=0.0):
+        self.calls.append(("write", text, interval))
+
+    def click(self, x, y, button="left"):
+        self.calls.append(("click", x, y, button))
+
+    def doubleClick(self, x, y, button="left"):
+        self.calls.append(("doubleClick", x, y, button))
+
+    def moveTo(self, x, y):
+        self.calls.append(("moveTo", x, y))
+
+    def dragTo(self, x, y, duration=0.0, button="left"):
+        self.calls.append(("dragTo", x, y, duration, button))
+
+    def scroll(self, amount):
+        self.calls.append(("scroll", amount))
+
+
+def test_action_validation():
+    assert Action("key", "space").value == "space"
+    Action("key", value="space").validate()
+    Action("hotkey", value="ctrl+shift+s").validate()
+    Action("left_click", x=100, y=200).validate()
+    with pytest.raises(ValueError):
+        Action("left_click", x=None, y=2).validate()
+    with pytest.raises(ValueError):
+        Action("key", value="").validate()
+    with pytest.raises(ValueError):
+        Action("key", value="f9").validate()
+    with pytest.raises(ValueError):
+        Action("hotkey", value="ctrl+f8").validate()
+
+
+def test_runner_executes_sequence_exact_number_of_times():
+    backend = FakeBackend()
+    runner = AutomationRunner(backend)
+    actions = [
+        Action("key", value="A", delay_after=0),
+        Action("hotkey", value="ctrl+s", delay_after=0),
+        Action("text", value="hello", delay_after=0),
+        Action("left_click", x=12, y=34, delay_after=0),
+        Action("right_click", x=56, y=78, delay_after=0),
+    ]
+    done = runner.run(actions, RunSettings(repeat_count=2, start_delay=0, cycle_interval=0, text_key_interval=0.03), threading.Event())
+    assert done is True
+    expected_once = [
+        ("press", "a"),
+        ("hotkey", "ctrl", "s"),
+        ("write", "hello", 0.03),
+        ("click", 12, 34, "left"),
+        ("click", 56, 78, "right"),
+    ]
+    assert backend.calls == expected_once * 2
+
+
+def test_runner_honors_preexisting_stop():
+    backend = FakeBackend()
+    stop = threading.Event()
+    stop.set()
+    done = AutomationRunner(backend).run([Action("key", value="x")], RunSettings(start_delay=0), stop)
+    assert done is False
+    assert backend.calls == []
+
+
+def test_profile_round_trip(tmp_path: Path):
+    path = tmp_path / "demo.kca.json"
+    original_actions = [Action("right_click", x=321, y=654, delay_after=0.25)]
+    original_settings = RunSettings(repeat_count=7, start_delay=1.5, cycle_interval=0.2, text_key_interval=0.04)
+    save_profile(path, original_actions, original_settings)
+    actions, settings = load_profile(path)
+    assert actions == original_actions
+    assert settings == original_settings
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 1
+
+
+def test_advanced_mouse_actions():
+    backend = FakeBackend()
+    runner = AutomationRunner(backend)
+    actions = [
+        Action("double_click", x=10, y=20, delay_after=0),
+        Action("middle_click", x=30, y=40, delay_after=0),
+        Action("scroll", x=50, y=60, amount=-4, delay_after=0),
+        Action("drag", x=70, y=80, x2=170, y2=180, duration=0.5, delay_after=0),
+    ]
+    assert runner.run(actions, RunSettings(start_delay=0), threading.Event()) is True
+    assert backend.calls == [
+        ("doubleClick", 10, 20, "left"),
+        ("click", 30, 40, "middle"),
+        ("moveTo", 50, 60),
+        ("scroll", -4),
+        ("moveTo", 70, 80),
+        ("dragTo", 170, 180, 0.5, "left"),
+    ]
+
+
+def test_per_action_repeat_runs_only_that_action_multiple_times():
+    backend = FakeBackend()
+    actions = [Action("key", value="x", repeats=3, delay_after=0)]
+    assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0), threading.Event()) is True
+    assert backend.calls == [("press", "x"), ("press", "x"), ("press", "x")]
+
+
+def test_timing_jitter_uses_injected_randomizer(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("engine.interruptible_sleep", lambda seconds, stop: sleeps.append(seconds) or True)
+    backend = FakeBackend()
+    runner = AutomationRunner(backend, randomizer=lambda low, high: high)
+    actions = [Action("key", value="x", delay_after=1.0)]
+    settings = RunSettings(repeat_count=2, start_delay=0, cycle_interval=2.0, delay_jitter=0.25)
+    assert runner.run(actions, settings, threading.Event()) is True
+    assert sleeps == [0, 1.25, 2.25, 1.25]
+
+
+def test_disabled_actions_are_preserved_but_not_executed():
+    backend = FakeBackend()
+    actions = [
+        Action("key", value="x", enabled=False, delay_after=0),
+        Action("key", value="y", enabled=True, delay_after=0),
+    ]
+    assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0), threading.Event()) is True
+    assert backend.calls == [("press", "y")]
+
+
+def test_repeat_forever_runs_until_cancelled():
+    backend = FakeBackend()
+    stop = threading.Event()
+
+    class StoppingRunner(AutomationRunner):
+        def execute_action(self, action, text_key_interval, reserved_keys=None):
+            super().execute_action(action, text_key_interval, reserved_keys)
+            if len(backend.calls) == 3:
+                stop.set()
+
+    settings = RunSettings(start_delay=0, repeat_forever=True)
+    assert StoppingRunner(backend).run([Action("key", value="x", delay_after=0)], settings, stop) is False
+    assert backend.calls == [("press", "x"), ("press", "x"), ("press", "x")]
+
+
+def test_run_settings_reject_duplicate_hotkeys():
+    with pytest.raises(ValueError, match="must be different"):
+        RunSettings(start_hotkey="f6", capture_hotkey="f6", stop_hotkey="f9").validate()
+
+
+def test_old_profile_defaults_new_run_settings(tmp_path: Path):
+    path = tmp_path / "old.kca.json"
+    path.write_text(json.dumps({
+        "version": 1,
+        "actions": [{"kind": "key", "value": "a"}],
+        "settings": {"repeat_count": 2},
+    }), encoding="utf-8")
+    _, settings = load_profile(path)
+    assert settings.repeat_forever is False
+    assert (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey) == ("f6", "f8", "f9")
+
+
+def test_custom_shortcuts_allow_old_default_key_as_action(tmp_path: Path):
+    path = tmp_path / "custom.kca.json"
+    actions = [Action("key", value="f6", delay_after=0)]
+    settings = RunSettings(start_delay=0, start_hotkey="f10", capture_hotkey="f11", stop_hotkey="f12")
+    save_profile(path, actions, settings)
+    loaded_actions, loaded_settings = load_profile(path)
+    backend = FakeBackend()
+    assert AutomationRunner(backend).run(loaded_actions, loaded_settings, threading.Event()) is True
+    assert backend.calls == [("press", "f6")]

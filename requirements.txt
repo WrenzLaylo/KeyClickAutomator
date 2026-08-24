@@ -1,0 +1,5 @@
+pyautogui==0.9.54
+pynput==1.8.1
+pyinstaller==6.15.0
+pillow==11.3.0
+customtkinter==5.2.2

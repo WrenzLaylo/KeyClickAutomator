@@ -3,6 +3,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import pyautogui
 
 from engine import Action, AutomationRunner, RunSettings, load_profile, save_profile
 
@@ -17,7 +18,7 @@ class FakeBackend:
     def hotkey(self, *keys):
         self.calls.append(("hotkey", *keys))
 
-    def write(self, text, interval=0.0):
+    def write(self, text, interval=0.0, _pause=True):
         self.calls.append(("write", text, interval))
 
     def click(self, x, y, button="left"):
@@ -26,7 +27,7 @@ class FakeBackend:
     def doubleClick(self, x, y, button="left"):
         self.calls.append(("doubleClick", x, y, button))
 
-    def moveTo(self, x, y):
+    def moveTo(self, x, y, _pause=True):
         self.calls.append(("moveTo", x, y))
 
     def dragTo(self, x, y, duration=0.0, button="left"):
@@ -34,6 +35,12 @@ class FakeBackend:
 
     def scroll(self, amount):
         self.calls.append(("scroll", amount))
+
+    def mouseDown(self, button="left", _pause=True):
+        self.calls.append(("mouseDown", button))
+
+    def mouseUp(self, button="left", _pause=True):
+        self.calls.append(("mouseUp", button))
 
 
 def test_action_validation():
@@ -66,7 +73,11 @@ def test_runner_executes_sequence_exact_number_of_times():
     expected_once = [
         ("press", "a"),
         ("hotkey", "ctrl", "s"),
-        ("write", "hello", 0.03),
+        ("write", "h", 0),
+        ("write", "e", 0),
+        ("write", "l", 0),
+        ("write", "l", 0),
+        ("write", "o", 0),
         ("click", 12, 34, "left"),
         ("click", 56, 78, "right"),
     ]
@@ -100,7 +111,7 @@ def test_advanced_mouse_actions():
         Action("double_click", x=10, y=20, delay_after=0),
         Action("middle_click", x=30, y=40, delay_after=0),
         Action("scroll", x=50, y=60, amount=-4, delay_after=0),
-        Action("drag", x=70, y=80, x2=170, y2=180, duration=0.5, delay_after=0),
+        Action("drag", x=70, y=80, x2=170, y2=180, duration=0, delay_after=0),
     ]
     assert runner.run(actions, RunSettings(start_delay=0), threading.Event()) is True
     assert backend.calls == [
@@ -109,7 +120,9 @@ def test_advanced_mouse_actions():
         ("moveTo", 50, 60),
         ("scroll", -4),
         ("moveTo", 70, 80),
-        ("dragTo", 170, 180, 0.5, "left"),
+        ("mouseDown", "left"),
+        ("moveTo", 170, 180),
+        ("mouseUp", "left"),
     ]
 
 
@@ -159,6 +172,114 @@ def test_repeat_forever_runs_until_cancelled():
 def test_run_settings_reject_duplicate_hotkeys():
     with pytest.raises(ValueError, match="must be different"):
         RunSettings(start_hotkey="f6", capture_hotkey="f6", stop_hotkey="f9").validate()
+
+
+def test_run_settings_accept_legacy_hotkey_aliases_and_detects_alias_duplicates():
+    RunSettings(start_hotkey="control+s", capture_hotkey="escape", stop_hotkey="f9").validate()
+    with pytest.raises(ValueError, match="must be different"):
+        RunSettings(start_hotkey="control+s", capture_hotkey="ctrl+s", stop_hotkey="f9").validate()
+
+
+@pytest.mark.parametrize("hotkey", ["foo", "ctrl++s", "f25"])
+def test_run_settings_reject_hotkeys_that_pynput_cannot_parse(hotkey):
+    with pytest.raises(ValueError, match="hotkey is invalid"):
+        RunSettings(start_hotkey=hotkey).validate()
+
+
+def test_long_text_action_can_be_stopped_between_characters():
+    stop = threading.Event()
+
+    class StoppingTextBackend(FakeBackend):
+        def write(self, text, interval=0.0, _pause=True):
+            super().write(text, interval, _pause)
+            stop.set()
+
+    backend = StoppingTextBackend()
+    done = AutomationRunner(backend).run(
+        [Action("text", value="dangerously long", delay_after=0)],
+        RunSettings(start_delay=0, text_key_interval=0),
+        stop,
+    )
+    assert done is False
+    assert backend.calls == [("write", "d", 0)]
+
+
+def test_drag_releases_mouse_when_emergency_stop_occurs_mid_drag():
+    stop = threading.Event()
+
+    class StoppingDragBackend(FakeBackend):
+        def mouseDown(self, button="left", _pause=True):
+            super().mouseDown(button, _pause)
+            stop.set()
+
+    backend = StoppingDragBackend()
+    done = AutomationRunner(backend).run(
+        [Action("drag", x=0, y=0, x2=500, y2=500, duration=5, delay_after=0)],
+        RunSettings(start_delay=0),
+        stop,
+    )
+    assert done is False
+    assert backend.calls == [("moveTo", 0, 0), ("mouseDown", "left"), ("mouseUp", "left")]
+
+
+def test_chunked_text_and_drag_disable_pyautogui_global_pause():
+    class PauseAwareBackend(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.pause_flags = []
+
+        def write(self, text, interval=0.0, _pause=True):
+            self.pause_flags.append(_pause)
+            super().write(text, interval, _pause)
+
+        def moveTo(self, x, y, _pause=True):
+            self.pause_flags.append(_pause)
+            super().moveTo(x, y, _pause)
+
+        def mouseDown(self, button="left", _pause=True):
+            self.pause_flags.append(_pause)
+            super().mouseDown(button, _pause)
+
+        def mouseUp(self, button="left", _pause=True):
+            self.pause_flags.append(_pause)
+            super().mouseUp(button, _pause)
+
+    backend = PauseAwareBackend()
+    actions = [
+        Action("text", value="ab", delay_after=0),
+        Action("drag", x=0, y=0, x2=10, y2=10, duration=0, delay_after=0),
+    ]
+    assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0, text_key_interval=0), threading.Event()) is True
+    assert backend.pause_flags == [False, False, False, False, False, False]
+
+
+def test_drag_fail_safe_uses_raw_mouse_release_cleanup():
+    raw_releases = []
+
+    class RawWindowsBackend:
+        @staticmethod
+        def _mouseUp(x, y, button):
+            raw_releases.append((x, y, button))
+
+    class FailSafeBackend(FakeBackend):
+        _pyautogui_win = RawWindowsBackend()
+
+        def moveTo(self, x, y, _pause=True):
+            if self.calls:
+                raise pyautogui.FailSafeException("corner")
+            super().moveTo(x, y, _pause)
+
+        def mouseUp(self, button="left", _pause=True):
+            raise pyautogui.FailSafeException("corner")
+
+    backend = FailSafeBackend()
+    with pytest.raises(pyautogui.FailSafeException):
+        AutomationRunner(backend).run(
+            [Action("drag", x=0, y=0, x2=10, y2=10, duration=0, delay_after=0)],
+            RunSettings(start_delay=0),
+            threading.Event(),
+        )
+    assert raw_releases == [(10, 10, "left")]
 
 
 def test_old_profile_defaults_new_run_settings(tmp_path: Path):

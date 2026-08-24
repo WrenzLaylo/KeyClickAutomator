@@ -1,13 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
+from pathlib import Path
 
-customtkinter_data = collect_data_files('customtkinter')
+project = Path(SPECPATH)
+app_data = [
+    (str(project / 'qml'), 'qml'),
+    (str(project / 'assets'), 'assets'),
+]
 
 analysis = Analysis(
-    ['app.py'],
+    ['qt_app.py'],
     pathex=[],
     binaries=[],
-    datas=customtkinter_data,
+    datas=app_data,
     hiddenimports=['pynput.keyboard._win32', 'pynput.mouse._win32'],
     hookspath=[],
     hooksconfig={},

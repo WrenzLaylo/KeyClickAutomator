@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import math
 import random
 import re
 import threading
@@ -17,17 +18,50 @@ VALID_ACTIONS = {
 }
 DEFAULT_RESERVED_KEYS = {"f6", "f8", "f9"}
 KEY_RE = re.compile(r"^[a-zA-Z0-9_+\-.,/\\;='\[\]` ]+$")
+HOTKEY_NAMED_KEYS = {
+    "alt", "alt_gr", "backspace", "caps_lock", "cmd", "ctrl", "delete",
+    "down", "end", "enter", "esc", "home", "insert", "left", "menu",
+    "num_lock", "page_down", "page_up", "pause", "right", "scroll_lock",
+    "shift", "space", "tab", "up",
+}
+HOTKEY_MODIFIERS = {"alt", "alt_gr", "cmd", "ctrl", "shift"}
+HOTKEY_ALIASES = {
+    "control": "ctrl", "escape": "esc", "return": "enter",
+    "windows": "cmd", "win": "cmd",
+}
 
 
 class AutomationBackend(Protocol):
     def press(self, key: str) -> None: ...
     def hotkey(self, *keys: str) -> None: ...
-    def write(self, text: str, interval: float = 0.0) -> None: ...
+    def write(self, text: str, interval: float = 0.0, _pause: bool = True) -> None: ...
     def click(self, x: int, y: int, button: str = "left") -> None: ...
     def doubleClick(self, x: int, y: int, button: str = "left") -> None: ...
-    def moveTo(self, x: int, y: int) -> None: ...
+    def moveTo(self, x: int, y: int, _pause: bool = True) -> None: ...
     def dragTo(self, x: int, y: int, duration: float = 0.0, button: str = "left") -> None: ...
     def scroll(self, amount: int) -> None: ...
+    def mouseDown(self, button: str = "left", _pause: bool = True) -> None: ...
+    def mouseUp(self, button: str = "left", _pause: bool = True) -> None: ...
+
+
+def validate_global_hotkey(value: str, label: str = "Hotkey") -> str:
+    """Validate the subset accepted by pynput's Windows global-hotkey parser."""
+    normalized = value.strip().lower().replace(" ", "")
+    parts = normalized.split("+")
+    if not normalized or any(not part for part in parts):
+        raise ValueError(f"{label} is invalid.")
+    parts = [HOTKEY_ALIASES.get(part, part) for part in parts]
+
+    def valid_part(part: str) -> bool:
+        if part in HOTKEY_NAMED_KEYS:
+            return True
+        if re.fullmatch(r"f(?:[1-9]|1[0-9]|2[0-4])", part):
+            return True
+        return len(part) == 1 and bool(re.fullmatch(r"[a-z0-9\-.,/\\;='\[\]`]", part))
+
+    if any(not valid_part(part) for part in parts) or all(part in HOTKEY_MODIFIERS for part in parts):
+        raise ValueError(f"{label} is invalid.")
+    return "+".join(parts)
 
 
 @dataclass
@@ -122,10 +156,7 @@ class RunSettings:
         }
         normalized = []
         for label, value in hotkeys.items():
-            value = value.strip().lower()
-            if not value or not KEY_RE.fullmatch(value):
-                raise ValueError(f"{label} is invalid.")
-            normalized.append(value)
+            normalized.append(validate_global_hotkey(value, label))
         if len(set(normalized)) != len(normalized):
             raise ValueError("Start, capture, and stop hotkeys must be different.")
         for label, value in {
@@ -160,6 +191,16 @@ class AutomationRunner:
             return seconds
         return max(0.0, seconds + self.randomizer(-jitter, jitter))
 
+    def _release_drag_mouse(self, x: int, y: int) -> None:
+        """Release a held button even when PyAutoGUI's corner fail-safe is active."""
+        try:
+            self.backend.mouseUp(button="left", _pause=False)
+        except Exception:
+            raw_release = getattr(getattr(self.backend, "_pyautogui_win", None), "_mouseUp", None)
+            if raw_release is None:
+                raise
+            raw_release(x, y, "left")
+
     def execute_action(self, action: Action, text_key_interval: float, reserved_keys: set[str] | None = None) -> None:
         action.validate(reserved_keys)
         if action.kind == "key":
@@ -185,6 +226,46 @@ class AutomationRunner:
         elif action.kind == "drag":
             self.backend.moveTo(action.x, action.y)
             self.backend.dragTo(action.x2, action.y2, duration=action.duration, button="left")
+
+    def _execute_interruptibly(
+        self,
+        action: Action,
+        text_key_interval: float,
+        stop_event: threading.Event,
+        reserved_keys: set[str],
+    ) -> bool:
+        """Execute long actions in cancellable chunks and always release held input."""
+        if action.kind == "text":
+            action.validate(reserved_keys)
+            for character in action.value:
+                if stop_event.is_set():
+                    return False
+                self.backend.write(character, interval=0, _pause=False)
+                if not interruptible_sleep(text_key_interval, stop_event):
+                    return False
+            return True
+
+        if action.kind == "drag":
+            action.validate(reserved_keys)
+            self.backend.moveTo(action.x, action.y, _pause=False)
+            self.backend.mouseDown(button="left", _pause=False)
+            try:
+                steps = max(1, math.ceil(action.duration / 0.02))
+                step_delay = action.duration / steps
+                for step in range(1, steps + 1):
+                    if stop_event.is_set():
+                        return False
+                    x = round(action.x + (action.x2 - action.x) * step / steps)
+                    y = round(action.y + (action.y2 - action.y) * step / steps)
+                    self.backend.moveTo(x, y, _pause=False)
+                    if not interruptible_sleep(step_delay, stop_event):
+                        return False
+                return True
+            finally:
+                self._release_drag_mouse(action.x2, action.y2)
+
+        self.execute_action(action, text_key_interval, reserved_keys)
+        return not stop_event.is_set()
 
     def run(
         self,
@@ -221,7 +302,8 @@ class AutomationRunner:
                 for _ in range(action.repeats):
                     if stop_event.is_set():
                         return False
-                    self.execute_action(action, settings.text_key_interval, reserved_keys)
+                    if not self._execute_interruptibly(action, settings.text_key_interval, stop_event, reserved_keys):
+                        return False
                     delay = self._jittered(action.delay_after, settings.delay_jitter)
                     if not interruptible_sleep(delay, stop_event):
                         return False

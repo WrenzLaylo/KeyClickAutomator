@@ -548,14 +548,13 @@ ApplicationWindow {
                             objectName: "actionCard"
                             required property string title
                             required property string subtitle
-                            required property bool enabled
+                            required property bool actionEnabled
                             required property int actionIndex
                             required property string actionIcon
                             width: ListView.view.width
                             height: 76
                             color: "transparent"
                             border.width: 0
-                            opacity: enabled ? 1 : 0.48
                             HoverHandler { id: hover }
 
                             Rectangle {
@@ -578,9 +577,11 @@ ApplicationWindow {
                                 radius: 10
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
+                                opacity: actionCard.actionEnabled ? 1 : 0.55
                                 color: controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? root.primarySoft : root.surface2
                                 border.width: controller.selectedIndex === actionCard.actionIndex ? 0 : 1
                                 border.color: hover.hovered ? "#B8CCF5" : root.line
+                                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Behavior on border.color { ColorAnimation { duration: 120 } }
                                 Text {
@@ -628,83 +629,115 @@ ApplicationWindow {
                                     anchors.rightMargin: 10
                                     spacing: 10
 
-                                    Rectangle {
-                                        Layout.preferredWidth: 36
-                                        Layout.preferredHeight: 36
-                                        radius: 11
-                                        color: controller.selectedIndex === actionCard.actionIndex ? root.surface : root.primarySoft
-                                        border.width: controller.selectedIndex === actionCard.actionIndex ? 1 : 0
-                                        border.color: "#C6D8FC"
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: actionCard.actionIcon
-                                            color: root.primary
-                                            font.family: interBold.name || root.font.family
-                                            font.pixelSize: actionCard.actionIcon.length > 1 ? 10 : 14
-                                        }
-                                    }
-
-                                    ColumnLayout {
+                                    RowLayout {
+                                        id: actionContent
+                                        objectName: "actionContent_" + actionCard.actionIndex
                                         Layout.fillWidth: true
-                                        spacing: 3
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 8
+                                        spacing: 10
+                                        opacity: actionCard.actionEnabled ? 1 : 0.42
+                                        Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+                                        Rectangle {
+                                            Layout.preferredWidth: 36
+                                            Layout.preferredHeight: 36
+                                            radius: 11
+                                            color: controller.selectedIndex === actionCard.actionIndex ? root.surface : root.primarySoft
+                                            border.width: controller.selectedIndex === actionCard.actionIndex ? 1 : 0
+                                            border.color: "#C6D8FC"
                                             Text {
-                                                Layout.fillWidth: true
-                                                text: actionCard.title
-                                                elide: Text.ElideRight
-                                                color: root.ink
-                                                font.family: interSemiBold.name || root.font.family
-                                                font.pixelSize: 13
-                                            }
-                                            Rectangle {
-                                                objectName: "editingBadge"
-                                                visible: controller.selectedIndex === actionCard.actionIndex
-                                                implicitWidth: editingLabel.implicitWidth + 14
-                                                implicitHeight: 20
-                                                radius: 7
+                                                anchors.centerIn: parent
+                                                text: actionCard.actionIcon
                                                 color: root.primary
+                                                font.family: interBold.name || root.font.family
+                                                font.pixelSize: actionCard.actionIcon.length > 1 ? 10 : 14
+                                            }
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 3
+                                            RowLayout {
+                                                Layout.fillWidth: true
                                                 Text {
-                                                    id: editingLabel
-                                                    anchors.centerIn: parent
-                                                    text: "EDITING"
-                                                    color: "white"
+                                                    Layout.fillWidth: true
+                                                    text: actionCard.title
+                                                    elide: Text.ElideRight
+                                                    color: root.ink
                                                     font.family: interSemiBold.name || root.font.family
-                                                    font.pixelSize: 8
-                                                    font.letterSpacing: 0.5
+                                                    font.pixelSize: 13
+                                                }
+                                                Rectangle {
+                                                    objectName: "editingBadge"
+                                                    visible: controller.selectedIndex === actionCard.actionIndex
+                                                    implicitWidth: editingLabel.implicitWidth + 14
+                                                    implicitHeight: 20
+                                                    radius: 7
+                                                    color: root.primary
+                                                    Text {
+                                                        id: editingLabel
+                                                        anchors.centerIn: parent
+                                                        text: "EDITING"
+                                                        color: "white"
+                                                        font.family: interSemiBold.name || root.font.family
+                                                        font.pixelSize: 8
+                                                        font.letterSpacing: 0.5
+                                                    }
                                                 }
                                             }
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: actionCard.subtitle
-                                            elide: Text.ElideRight
-                                            color: root.ink3
-                                            font.family: interRegular.name || root.font.family
-                                            font.pixelSize: 11
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: actionCard.subtitle
+                                                elide: Text.ElideRight
+                                                color: root.ink3
+                                                font.family: interRegular.name || root.font.family
+                                                font.pixelSize: 11
+                                            }
                                         }
                                     }
 
                                     Switch {
                                         id: enabledSwitch
+                                        objectName: "actionEnabledSwitch_" + actionCard.actionIndex
                                         Layout.preferredWidth: 42
                                         Layout.preferredHeight: 32
-                                        checked: actionCard.enabled
+                                        checked: actionCard.actionEnabled
                                         onToggled: controller.setActionEnabled(actionCard.actionIndex, checked)
                                         contentItem: Item {}
                                         indicator: Rectangle {
+                                            id: actionToggleTrack
+                                            objectName: "actionToggleTrack_" + actionCard.actionIndex
                                             width: 38
                                             height: 22
                                             radius: 11
                                             anchors.centerIn: parent
+                                            clip: true
                                             color: enabledSwitch.checked ? root.primary : "#CAD1DC"
-                                            Behavior on color { ColorAnimation { duration: 140 } }
+                                            scale: enabledSwitch.down ? 0.96 : 1
+                                            transformOrigin: Item.Center
+                                            Behavior on color {
+                                                ColorAnimation { duration: 170; easing.type: Easing.OutCubic }
+                                            }
+                                            Behavior on scale {
+                                                NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
+                                            }
                                             Rectangle {
+                                                id: actionToggleKnob
+                                                objectName: "actionToggleKnob_" + actionCard.actionIndex
                                                 width: 18; height: 18; radius: 9; y: 2
                                                 x: enabledSwitch.checked ? 18 : 2
                                                 color: "white"
-                                                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                scale: enabledSwitch.down ? 0.88 : 1
+                                                transformOrigin: Item.Center
+                                                Behavior on x {
+                                                    NumberAnimation {
+                                                        duration: 190
+                                                        easing.type: Easing.OutBack
+                                                        easing.overshoot: 1.25
+                                                    }
+                                                }
+                                                Behavior on scale {
+                                                    NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
+                                                }
                                             }
                                         }
                                     }

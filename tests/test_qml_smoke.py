@@ -162,6 +162,56 @@ def test_sequence_rows_form_a_numbered_workflow_and_mark_the_selected_step():
     controller.shutdown()
 
 
+def test_action_toggle_animates_both_directions_and_remains_clickable_when_off():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(900)
+    window.setHeight(840)
+    controller.addAction({"kind": "key", "value": "enter"})
+    _app.processEvents()
+    QTest.qWait(240)
+
+    def only(prefix):
+        matches = visual_children_named(window.contentItem(), prefix)
+        assert len(matches) == 1
+        return matches[0]
+
+    enabled_switch = only("actionEnabledSwitch_0")
+    track = only("actionToggleTrack_0")
+    knob = only("actionToggleKnob_0")
+    content = only("actionContent_0")
+    assert enabled_switch.isEnabled() is True
+    assert enabled_switch.property("checked") is True
+    assert abs(knob.x() - 18) < 0.1
+
+    QMetaObject.invokeMethod(enabled_switch, "click", Qt.DirectConnection)
+    QTest.qWait(40)
+    assert controller.actions[0].enabled is False
+    assert enabled_switch.isEnabled() is True
+    assert 2 < knob.x() < 18
+    assert 0.42 < content.opacity() < 1
+
+    # Reverse the state while the first animation is still running. The new
+    # semantic state must win and the same delegate must remain interactive.
+    QMetaObject.invokeMethod(enabled_switch, "click", Qt.DirectConnection)
+    QTest.qWait(230)
+    assert controller.actions[0].enabled is True
+    assert enabled_switch.property("checked") is True
+    assert abs(knob.x() - 18) < 0.1
+    assert track.property("color").name() == "#1565ff"
+    assert abs(content.opacity() - 1) < 0.01
+
+    QMetaObject.invokeMethod(enabled_switch, "click", Qt.DirectConnection)
+    QTest.qWait(230)
+    assert controller.actions[0].enabled is False
+    assert enabled_switch.isEnabled() is True
+    assert abs(knob.x() - 2) < 0.1
+    assert track.property("color").name() == "#cad1dc"
+    assert abs(content.opacity() - 0.42) < 0.01
+    window.close()
+    controller.shutdown()
+
+
 def test_action_type_popup_opens_below_and_aligned_with_its_picker():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]

@@ -34,6 +34,23 @@ def test_can_run_tracks_whether_any_action_is_enabled():
     controller.shutdown()
 
 
+def test_action_toggle_updates_its_role_without_resetting_the_list_model():
+    controller = AutomatorController(start_hotkeys=False)
+    controller.addAction({"kind": "key", "value": "space"})
+    model = controller.actionModel
+    reset_spy = QSignalSpy(model.modelReset)
+    changed_spy = QSignalSpy(model.dataChanged)
+
+    controller.setActionEnabled(0, False)
+
+    assert bytes(model.roleNames()[ActionListModel.EnabledRole]) == b"actionEnabled"
+    assert controller.actions[0].enabled is False
+    assert reset_spy.count() == 0
+    assert changed_spy.count() == 1
+    assert changed_spy.at(0)[2] == [ActionListModel.EnabledRole]
+    controller.shutdown()
+
+
 def test_reorder_and_duplicate_actions():
     controller = AutomatorController(start_hotkeys=False)
     controller.addAction({"kind": "key", "value": "a"})

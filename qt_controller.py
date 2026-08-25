@@ -43,7 +43,7 @@ class ActionListModel(QAbstractListModel):
             self.TitleRole: QByteArray(b"title"),
             self.SubtitleRole: QByteArray(b"subtitle"),
             self.KindRole: QByteArray(b"kind"),
-            self.EnabledRole: QByteArray(b"enabled"),
+            self.EnabledRole: QByteArray(b"actionEnabled"),
             self.IndexRole: QByteArray(b"actionIndex"),
             self.IconRole: QByteArray(b"actionIcon"),
         }
@@ -120,6 +120,12 @@ class ActionListModel(QAbstractListModel):
         self.beginResetModel()
         callback()
         self.endResetModel()
+
+    def notify_row(self, row: int, roles: list[int]) -> None:
+        if not 0 <= row < self.rowCount():
+            return
+        model_index = self.index(row, 0)
+        self.dataChanged.emit(model_index, model_index, roles)
 
 
 class AutomatorController(QObject):
@@ -338,7 +344,11 @@ class AutomatorController(QObject):
     @Slot(int, bool)
     def setActionEnabled(self, index: int, enabled: bool) -> None:
         if 0 <= index < len(self.actions):
-            self._model.mutate(lambda: setattr(self.actions[index], "enabled", enabled))
+            enabled = bool(enabled)
+            if self.actions[index].enabled == enabled:
+                return
+            self.actions[index].enabled = enabled
+            self._model.notify_row(index, [ActionListModel.EnabledRole])
             self._notify_actions()
 
     @Slot()

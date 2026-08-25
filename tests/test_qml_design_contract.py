@@ -35,6 +35,16 @@ def test_sequence_rows_use_numbered_blue_workflow_steps():
     assert 'readonly property color accent: "#B86700"' not in QML
 
 
+def test_action_toggle_animates_without_disabling_its_delegate():
+    assert "required property bool actionEnabled" in QML
+    assert "required property bool enabled" not in QML
+    assert "checked: actionCard.actionEnabled" in QML
+    assert 'objectName: "actionToggleTrack_" + actionCard.actionIndex' in QML
+    assert 'objectName: "actionToggleKnob_" + actionCard.actionIndex' in QML
+    assert "easing.type: Easing.OutBack" in QML
+    assert "opacity: actionCard.actionEnabled ? 1 : 0.42" in QML
+
+
 def test_action_type_picker_uses_rounded_themed_popup():
     assert 'objectName: "actionTypePicker"' in QML
     assert "popup: Popup" in QML

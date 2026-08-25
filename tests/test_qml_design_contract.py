@@ -37,3 +37,10 @@ def test_status_toast_uses_theme_surfaces_not_near_black():
 def test_runtime_version_uses_controller_release_constant():
     assert "from qt_controller import APP_VERSION, AutomatorController" in QT_APP
     assert "app.setApplicationVersion(APP_VERSION)" in QT_APP
+
+
+def test_visible_version_labels_use_qt_runtime_version():
+    assert 'title: "KeyClick Automator " + Qt.application.version' in QML
+    assert 'text: "AUTOMATOR  ·  " + Qt.application.version' in QML
+    assert 'KeyClick Automator 3.0"' not in QML
+    assert 'AUTOMATOR  ·  3.0"' not in QML

@@ -11,7 +11,7 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 640
     visible: true
-    title: "KeyClick Automator 3.0"
+    title: "KeyClick Automator " + Qt.application.version
     color: canvas
     opacity: 0
 
@@ -228,7 +228,7 @@ ApplicationWindow {
                         anchors.topMargin: 60
                         spacing: 2
                         Text { text: "KeyClick"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 18; font.weight: Font.Bold }
-                        Text { text: "AUTOMATOR  ·  3.0"; color: root.ink3; font.family: interSemiBold.name || root.font.family; font.pixelSize: 10; font.letterSpacing: 0.6 }
+                        Text { text: "AUTOMATOR  ·  " + Qt.application.version; color: root.ink3; font.family: interSemiBold.name || root.font.family; font.pixelSize: 10; font.letterSpacing: 0.6 }
                     }
                 }
 

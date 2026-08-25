@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QFileDialog
 from engine import HOTKEY_NAMED_KEYS, Action, AutomationRunner, RunSettings, load_profile, save_profile
 
 
-APP_VERSION = "3.0.7"
+APP_VERSION = "3.0.8"
 
 
 class ActionListModel(QAbstractListModel):
@@ -220,6 +220,10 @@ class AutomatorController(QObject):
     @Property(float, notify=progressChanged)
     def progress(self) -> float:
         return self._progress
+
+    @Property(bool, notify=actionsChanged)
+    def canRun(self) -> bool:
+        return any(action.enabled for action in self.actions)
 
     @Property("QVariantMap", notify=runSettingsChanged)
     def runSettings(self) -> dict[str, Any]:

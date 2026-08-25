@@ -64,10 +64,12 @@ The test suite covers the automation engine, cancellation, timing, profiles, con
 
 ## Release artifacts
 
-- `release\KeyClickAutomator-Portable-3.0.0.exe`
-- `release\KeyClickAutomator-Setup-3.0.0.exe`
+- `release\KeyClickAutomator-Portable-3.0.8.exe`
+- `release\KeyClickAutomator-Setup-3.0.8.exe`
 
 The installer is per-user and does not require administrator rights.
+The portable build is a single standalone executable; the setup build uses a
+more compact multi-file installation layout.
 
 ## Font license
 

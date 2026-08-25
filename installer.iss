@@ -1,5 +1,5 @@
 #define MyAppName "KeyClick Automator"
-#define MyAppVersion "3.0.7"
+#define MyAppVersion "3.0.8"
 #define MyAppPublisher "KeyClick Automator"
 #define MyAppExeName "KeyClickAutomator.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=release
-OutputBaseFilename=KeyClickAutomator-Setup-3.0.7
+OutputBaseFilename=KeyClickAutomator-Setup-3.0.8
 SetupIconFile=assets\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -21,7 +21,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-VersionInfoVersion=3.0.7.0
+VersionInfoVersion=3.0.8.0
 VersionInfoDescription=KeyClick Automator Setup
 
 [Languages]
@@ -31,7 +31,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\KeyClickAutomator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

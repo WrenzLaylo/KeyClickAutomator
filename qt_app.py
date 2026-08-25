@@ -39,7 +39,8 @@ def create_application(arguments: list[str] | None = None) -> QApplication:
 
 
 def main() -> int:
-    os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+    # The release bundle intentionally ships only the Basic controls style.
+    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
     app = create_application(sys.argv)
     app.setApplicationName("KeyClick Automator")
     app.setApplicationVersion(APP_VERSION)

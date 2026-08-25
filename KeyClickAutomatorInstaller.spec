@@ -36,9 +36,8 @@ pyz = PYZ(analysis.pure)
 exe = EXE(
     pyz,
     analysis.scripts,
-    analysis.binaries,
-    analysis.datas,
     [],
+    exclude_binaries=True,
     name='KeyClickAutomator',
     debug=False,
     bootloader_ignore_signals=False,
@@ -52,4 +51,13 @@ exe = EXE(
     entitlements_file=None,
     icon=['assets/app.ico'],
     version='version_info.txt',
+)
+collect = COLLECT(
+    exe,
+    analysis.binaries,
+    analysis.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='KeyClickAutomator',
 )

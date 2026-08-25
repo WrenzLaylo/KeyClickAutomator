@@ -22,6 +22,18 @@ def test_add_action_updates_model_and_summary():
     controller.shutdown()
 
 
+def test_can_run_tracks_whether_any_action_is_enabled():
+    controller = AutomatorController(start_hotkeys=False)
+    assert controller.canRun is False
+    controller.addAction({"kind": "key", "value": "space", "enabled": False})
+    assert controller.canRun is False
+    controller.setActionEnabled(0, True)
+    assert controller.canRun is True
+    controller.setActionEnabled(0, False)
+    assert controller.canRun is False
+    controller.shutdown()
+
+
 def test_reorder_and_duplicate_actions():
     controller = AutomatorController(start_hotkeys=False)
     controller.addAction({"kind": "key", "value": "a"})

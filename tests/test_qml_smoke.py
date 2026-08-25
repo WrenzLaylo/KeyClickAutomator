@@ -2,7 +2,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QPoint, QPointF, QMetaObject, Qt
+from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -50,11 +51,49 @@ def test_inspector_tab_selection_pill_slides_between_tabs():
 def test_workspace_navigation_hover_state_is_isolated_per_button():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
-    buttons = [window.findChild(QObject, f"workspaceNav_{name}") for name in ("open", "save", "new")]
+    buttons = [window.findChild(QQuickItem, f"workspaceNav_{name}") for name in ("open", "save", "new")]
     assert all(button is not None for button in buttons)
-    buttons[0].setProperty("pointerHover", True)
-    _app.processEvents()
-    assert [button.property("pointerHover") for button in buttons] == [True, False, False]
+    for hovered_index, button in enumerate(buttons):
+        for index, item in enumerate(buttons):
+            item.setProperty("pointerHover", index == hovered_index)
+        _app.processEvents()
+        QTest.qWait(160)
+        assert [item.property("pointerHover") for item in buttons] == [index == hovered_index for index in range(3)]
+        assert button.property("background").property("color").name() == "#e8f0ff"
+    window.close()
+    controller.shutdown()
+
+
+def test_create_first_action_button_adds_the_configured_action():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    button = window.findChild(QQuickItem, "createFirstAction")
+    assert button is not None
+    QMetaObject.invokeMethod(button, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.actionModel.rowCount() == 1
+    assert controller.actions[0].kind == "key"
+    assert controller.actions[0].value == "space"
+    window.close()
+    controller.shutdown()
+
+
+def test_recorded_global_shortcut_routes_to_the_correct_qml_field():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    fields = {
+        name: window.findChild(QQuickItem, f"{name}HotkeyField")
+        for name in ("start", "capture", "stop")
+    }
+    assert all(field is not None for field in fields.values())
+    controller.shortcutCaptured.emit("capture", "ctrl+shift+c")
+    QTest.qWait(40)
+    assert fields["start"].property("text") == "f6"
+    assert fields["capture"].property("text") == "ctrl+shift+c"
+    assert fields["stop"].property("text") == "f9"
+    controller.runSettingsChanged.emit()
+    QTest.qWait(40)
+    assert fields["capture"].property("text") == "f8"
     window.close()
     controller.shutdown()
 

@@ -66,6 +66,88 @@ def test_recorded_key_names_are_stable_for_character_and_special_keys():
     assert AutomatorController.keyName(keyboard.Key.space) == "space"
 
 
+def test_global_shortcut_recorder_captures_modifier_combination_without_applying(monkeypatch):
+    listeners = []
+
+    class Listener:
+        def __init__(self, on_press=None, on_release=None):
+            self.on_press = on_press
+            self.on_release = on_release
+            self.started = False
+
+        def start(self):
+            self.started = True
+            listeners.append(self)
+
+        def stop(self):
+            self.started = False
+
+    monkeypatch.setattr(qt_controller.keyboard, "Listener", Listener)
+    controller = AutomatorController(start_hotkeys=False)
+    captured = QSignalSpy(controller.shortcutCaptured)
+
+    assert controller.recordGlobalShortcut("start") is True
+    listener = listeners[-1]
+    assert listener.on_press(keyboard.Key.ctrl_l) is None
+    assert listener.on_press(keyboard.Key.shift) is None
+    assert listener.on_press(keyboard.KeyCode.from_char("s")) is False
+    QTest.qWait(20)
+
+    assert captured.count() == 1
+    assert captured.at(0) == ["start", "ctrl+shift+s"]
+    assert controller.runSettings["startHotkey"] == "f6"
+    controller.shutdown()
+
+
+def test_global_shortcut_recorder_rejects_unknown_target():
+    controller = AutomatorController(start_hotkeys=False)
+    assert controller.recordGlobalShortcut("unknown") is False
+    controller.shutdown()
+
+
+def test_global_shortcut_recording_restores_known_good_listener_until_apply(monkeypatch):
+    global_listeners = []
+    capture_listeners = []
+
+    class GlobalListener:
+        def __init__(self, mapping):
+            self.mapping = mapping
+            self.stopped = False
+
+        def start(self):
+            global_listeners.append(self)
+
+        def stop(self):
+            self.stopped = True
+
+    class CaptureListener:
+        def __init__(self, on_press=None, on_release=None):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self):
+            capture_listeners.append(self)
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(qt_controller.keyboard, "GlobalHotKeys", GlobalListener)
+    monkeypatch.setattr(qt_controller.keyboard, "Listener", CaptureListener)
+    controller = AutomatorController(start_hotkeys=True)
+    known_good = global_listeners[-1]
+
+    assert controller.recordGlobalShortcut("start") is True
+    assert known_good.stopped is True
+    assert capture_listeners[-1].on_press(keyboard.Key.f10) is False
+    QTest.qWait(20)
+
+    assert controller.runSettings["startHotkey"] == "f6"
+    assert controller._listener is global_listeners[-1]
+    assert controller._listener is not known_good
+    assert "<f6>" in controller._listener.mapping
+    controller.shutdown()
+
+
 def test_all_accepted_named_global_keys_are_formatted_for_pynput():
     for value in ("caps_lock", "insert", "menu", "num_lock", "pause", "scroll_lock", "alt_gr"):
         keyboard.HotKey.parse(AutomatorController._pynput_hotkey(value))
@@ -105,6 +187,23 @@ def test_failed_hotkey_replacement_keeps_known_good_listener(monkeypatch):
     assert old_listener.stopped is False
     assert controller.runSettings["startHotkey"] == "f6"
     controller._hotkeys_enabled = False
+    controller.shutdown()
+
+
+def test_reordered_duplicate_shortcuts_do_not_replace_known_good_settings():
+    controller = AutomatorController(start_hotkeys=False)
+    toast_spy = QSignalSpy(controller.toast)
+
+    controller.applyRunSettings({
+        "startHotkey": "ctrl+s",
+        "captureHotkey": "s+control",
+        "stopHotkey": "f9",
+    })
+
+    assert controller.runSettings["startHotkey"] == "f6"
+    assert controller.runSettings["captureHotkey"] == "f8"
+    assert toast_spy.count() == 1
+    assert "must be different" in toast_spy.at(0)[0]
     controller.shutdown()
 
 

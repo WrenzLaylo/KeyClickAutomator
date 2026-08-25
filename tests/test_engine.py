@@ -178,6 +178,13 @@ def test_run_settings_accept_legacy_hotkey_aliases_and_detects_alias_duplicates(
     RunSettings(start_hotkey="control+s", capture_hotkey="escape", stop_hotkey="f9").validate()
     with pytest.raises(ValueError, match="must be different"):
         RunSettings(start_hotkey="control+s", capture_hotkey="ctrl+s", stop_hotkey="f9").validate()
+    with pytest.raises(ValueError, match="must be different"):
+        RunSettings(start_hotkey="ctrl+s", capture_hotkey="s+control", stop_hotkey="f9").validate()
+
+
+def test_global_hotkey_rejects_repeated_components():
+    with pytest.raises(ValueError, match="invalid"):
+        RunSettings(start_hotkey="ctrl+ctrl+s").validate()
 
 
 @pytest.mark.parametrize("hotkey", ["foo", "ctrl++s", "f25"])

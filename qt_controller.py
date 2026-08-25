@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QFileDialog
 from engine import HOTKEY_NAMED_KEYS, Action, AutomationRunner, RunSettings, load_profile, save_profile
 
 
-APP_VERSION = "3.0.2"
+APP_VERSION = "3.0.6"
 
 
 class ActionListModel(QAbstractListModel):
@@ -134,6 +134,7 @@ class AutomatorController(QObject):
     toast = Signal(str, str)
     positionCaptured = Signal(int, int, int)
     actionKeyCaptured = Signal(str)
+    shortcutCaptured = Signal(str, str)
     progressFromWorker = Signal(str, int, int)
     finishedFromWorker = Signal(bool, str)
     hotkeyToggleRequested = Signal()
@@ -162,6 +163,7 @@ class AutomatorController(QObject):
         self.hotkeyCaptureRequested.connect(lambda: self.capturePosition(0))
         self.hotkeyStopRequested.connect(self.stopRun)
         self.actionKeyCaptured.connect(self._on_action_key_captured)
+        self.shortcutCaptured.connect(self._on_shortcut_captured)
         if start_hotkeys:
             self._restart_hotkeys()
 
@@ -483,6 +485,61 @@ class AutomatorController(QObject):
 
     @Slot(str)
     def _on_action_key_captured(self, value: str) -> None:
+        self._capture_listener = None
+        self.toast.emit(f"Recorded {value.upper()}", "success")
+        if self._hotkeys_enabled:
+            self._restart_hotkeys()
+
+    @staticmethod
+    def _shortcut_modifier(key: keyboard.Key | keyboard.KeyCode) -> str | None:
+        name = AutomatorController.keyName(key)
+        aliases = {
+            "ctrl": "ctrl", "ctrl_l": "ctrl", "ctrl_r": "ctrl",
+            "shift": "shift", "shift_l": "shift", "shift_r": "shift",
+            "alt": "alt", "alt_l": "alt", "alt_r": "alt",
+            "cmd": "cmd", "cmd_l": "cmd", "cmd_r": "cmd",
+            "alt_gr": "alt_gr",
+        }
+        return aliases.get(name)
+
+    @Slot(str, result=bool)
+    def recordGlobalShortcut(self, target: str) -> bool:
+        if target not in {"start", "capture", "stop"} or self._capture_listener is not None:
+            return False
+        if self._listener:
+            self._listener.stop()
+            self._listener = None
+        modifiers: set[str] = set()
+        self.toast.emit("Press the shortcut you want to record", "neutral")
+
+        def on_press(key) -> bool | None:
+            modifier = self._shortcut_modifier(key)
+            if modifier:
+                modifiers.add(modifier)
+                return None
+            key_name = self.keyName(key)
+            ordered = [name for name in ("ctrl", "alt", "shift", "cmd", "alt_gr") if name in modifiers]
+            self.shortcutCaptured.emit(target, "+".join([*ordered, key_name]))
+            return False
+
+        def on_release(key) -> None:
+            modifier = self._shortcut_modifier(key)
+            if modifier:
+                modifiers.discard(modifier)
+
+        try:
+            self._capture_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            self._capture_listener.start()
+        except Exception as exc:
+            self._capture_listener = None
+            self.toast.emit(f"Shortcut recorder error: {exc}", "error")
+            if self._hotkeys_enabled:
+                self._restart_hotkeys()
+            return False
+        return True
+
+    @Slot(str, str)
+    def _on_shortcut_captured(self, target: str, value: str) -> None:
         self._capture_listener = None
         self.toast.emit(f"Recorded {value.upper()}", "success")
         if self._hotkeys_enabled:

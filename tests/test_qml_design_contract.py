@@ -44,3 +44,10 @@ def test_visible_version_labels_use_qt_runtime_version():
     assert 'text: "AUTOMATOR  ·  " + Qt.application.version' in QML
     assert 'KeyClick Automator 3.0"' not in QML
     assert 'AUTOMATOR  ·  3.0"' not in QML
+
+
+def test_all_global_shortcuts_have_record_controls_and_signal_routing():
+    for target in ("start", "capture", "stop"):
+        assert f'objectName: "shortcutRecord_{target}"' in QML
+        assert f'controller.recordGlobalShortcut("{target}")' in QML
+    assert "function onShortcutCaptured(target, value)" in QML

@@ -21,6 +21,7 @@ ApplicationWindow {
     property bool inspectorOpen: !overlayInspector
     property int activeInspectorTab: 0
     property int editorIndex: -1
+    property string shortcutRecordingTarget: ""
 
     readonly property color ink: "#171A21"
     readonly property color ink2: "#4B5363"
@@ -72,6 +73,7 @@ ApplicationWindow {
         property bool primary: false
         property bool danger: false
         property bool quiet: false
+        property bool navStyle: false
         property string leading: ""
         property bool pointerHover: false
         implicitHeight: 42
@@ -90,14 +92,14 @@ ApplicationWindow {
             Text {
                 visible: control.leading !== ""
                 text: control.leading
-                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : root.ink) : root.ink3
+                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : control.navStyle && control.pointerHover ? root.blue : root.ink) : root.ink3
                 font.family: interSemiBold.name || root.font.family
                 font.pixelSize: 15
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 text: control.text
-                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : root.ink) : root.ink3
+                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : control.navStyle && control.pointerHover ? root.blue : root.ink) : root.ink3
                 font: control.font
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -106,7 +108,7 @@ ApplicationWindow {
             radius: 12
             color: !control.enabled ? root.surface2
                  : control.down ? (control.primary ? "#0049C9" : root.surface3)
-                 : control.pointerHover ? (control.primary ? root.blueHover : control.danger ? "#FDECEF" : root.surface3)
+                 : control.pointerHover ? (control.primary ? root.blueHover : control.danger ? "#FDECEF" : control.navStyle ? root.blueSoft : root.surface3)
                  : control.primary ? root.blue : control.quiet ? "transparent" : control.danger ? "#FFF2F4" : root.surface2
             border.width: control.visualFocus ? 2 : 0
             border.color: root.blue
@@ -241,6 +243,7 @@ ApplicationWindow {
                     text: root.compactNav ? "" : "Open profile"
                     leading: "↗"
                     quiet: true
+                    navStyle: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "Open profile"
                     onClicked: controller.openProfile()
@@ -252,6 +255,7 @@ ApplicationWindow {
                     text: root.compactNav ? "" : "Save profile"
                     leading: "↓"
                     quiet: true
+                    navStyle: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "Save profile"
                     onClicked: controller.saveProfile()
@@ -263,6 +267,7 @@ ApplicationWindow {
                     text: root.compactNav ? "" : "New sequence"
                     leading: "+"
                     quiet: true
+                    navStyle: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "New sequence"
                     onClicked: controller.clearActions()
@@ -443,7 +448,20 @@ ApplicationWindow {
                         }
                         Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Build a sequence that feels effortless"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 19; font.weight: Font.Bold }
                         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "Add keys, clicks, scrolling, text, or drag actions. Then tune timing in the inspector."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 12; lineHeight: 1.25 }
-                        KButton { anchors.horizontalCenter: parent.horizontalCenter; text: "Create first action"; leading: "+"; onClicked: { root.activeInspectorTab = 0; root.inspectorOpen = true; valueField.forceActiveFocus() } }
+                        KButton {
+                            objectName: "createFirstAction"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "Create first action"
+                            leading: "+"
+                            primary: true
+                            implicitWidth: 164
+                            onClicked: {
+                                root.activeInspectorTab = 0
+                                root.inspectorOpen = true
+                                controller.addAction(editor.payload())
+                                editor.reset()
+                            }
+                        }
                     }
 
                     ListView {
@@ -724,6 +742,7 @@ ApplicationWindow {
                             function payload() {
                                 return {kind: kindValue(), value: valueField.text, x: xField.text, y: yField.text, x2: x2Field.text, y2: y2Field.text, amount: amountField.text, duration: durationField.text, repeats: repeatsField.text, delay: delayField.text, enabled: true}
                             }
+                            Component.onCompleted: reset()
 
                             KButton { Layout.fillWidth: true; text: root.editorIndex >= 0 ? "Editing action " + (root.editorIndex + 1) : "New action"; leading: root.editorIndex >= 0 ? "✦" : "+"; onClicked: editor.reset() }
                             FormLabel { text: "ACTION TYPE"; Layout.topMargin: 6 }
@@ -884,6 +903,7 @@ ApplicationWindow {
 
                     Flickable {
                         id: runFlick
+                        objectName: "runSettingsFlick"
                         contentHeight: runForm.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
@@ -934,18 +954,42 @@ ApplicationWindow {
                             Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Use one key or a combination like ctrl+shift+s."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11 }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Start / toggle"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 100 }
-                                KField { id: startHotkey; Layout.fillWidth: true; text: controller.runSettings.startHotkey }
+                                Text { text: "Start / toggle"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey }
+                                KButton {
+                                    objectName: "shortcutRecord_start"
+                                    implicitWidth: 78
+                                    text: root.shortcutRecordingTarget === "start" ? "Press…" : "Record"
+                                    leading: root.shortcutRecordingTarget === "start" ? "●" : "⌨"
+                                    primary: root.shortcutRecordingTarget === "start"
+                                    onClicked: if (controller.recordGlobalShortcut("start")) root.shortcutRecordingTarget = "start"
+                                }
                             }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Capture"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 100 }
-                                KField { id: captureHotkey; Layout.fillWidth: true; text: controller.runSettings.captureHotkey }
+                                Text { text: "Capture"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey }
+                                KButton {
+                                    objectName: "shortcutRecord_capture"
+                                    implicitWidth: 78
+                                    text: root.shortcutRecordingTarget === "capture" ? "Press…" : "Record"
+                                    leading: root.shortcutRecordingTarget === "capture" ? "●" : "⌨"
+                                    primary: root.shortcutRecordingTarget === "capture"
+                                    onClicked: if (controller.recordGlobalShortcut("capture")) root.shortcutRecordingTarget = "capture"
+                                }
                             }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Emergency stop"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 100 }
-                                KField { id: stopHotkey; Layout.fillWidth: true; text: controller.runSettings.stopHotkey }
+                                Text { text: "Emergency stop"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey }
+                                KButton {
+                                    objectName: "shortcutRecord_stop"
+                                    implicitWidth: 78
+                                    text: root.shortcutRecordingTarget === "stop" ? "Press…" : "Record"
+                                    leading: root.shortcutRecordingTarget === "stop" ? "●" : "⌨"
+                                    primary: root.shortcutRecordingTarget === "stop"
+                                    onClicked: if (controller.recordGlobalShortcut("stop")) root.shortcutRecordingTarget = "stop"
+                                }
                             }
                             KButton { Layout.fillWidth: true; Layout.topMargin: 8; primary: true; text: "Apply run settings"; leading: "✓"; onClicked: runForm.apply() }
                             Item { Layout.preferredHeight: 12 }
@@ -996,6 +1040,17 @@ ApplicationWindow {
         }
         function onActionKeyCaptured(value) {
             valueField.text = value
+        }
+        function onShortcutCaptured(target, value) {
+            if (target === "start") startHotkey.text = value
+            else if (target === "capture") captureHotkey.text = value
+            else if (target === "stop") stopHotkey.text = value
+            root.shortcutRecordingTarget = ""
+        }
+        function onRunSettingsChanged() {
+            startHotkey.text = controller.runSettings.startHotkey
+            captureHotkey.text = controller.runSettings.captureHotkey
+            stopHotkey.text = controller.runSettings.stopHotkey
         }
     }
 }

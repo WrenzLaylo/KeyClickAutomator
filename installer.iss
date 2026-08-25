@@ -1,5 +1,5 @@
 #define MyAppName "KeyClick Automator"
-#define MyAppVersion "3.0.2"
+#define MyAppVersion "3.0.6"
 #define MyAppPublisher "KeyClick Automator"
 #define MyAppExeName "KeyClickAutomator.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=release
-OutputBaseFilename=KeyClickAutomator-Setup-3.0.2
+OutputBaseFilename=KeyClickAutomator-Setup-3.0.6
 SetupIconFile=assets\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -21,7 +21,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-VersionInfoVersion=3.0.2.0
+VersionInfoVersion=3.0.6.0
 VersionInfoDescription=KeyClick Automator Setup
 
 [Languages]

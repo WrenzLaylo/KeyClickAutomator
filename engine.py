@@ -61,7 +61,11 @@ def validate_global_hotkey(value: str, label: str = "Hotkey") -> str:
 
     if any(not valid_part(part) for part in parts) or all(part in HOTKEY_MODIFIERS for part in parts):
         raise ValueError(f"{label} is invalid.")
-    return "+".join(parts)
+    if len(set(parts)) != len(parts):
+        raise ValueError(f"{label} is invalid.")
+    modifier_order = {name: index for index, name in enumerate(("ctrl", "alt", "shift", "cmd", "alt_gr"))}
+    canonical = sorted(parts, key=lambda part: (0, modifier_order[part]) if part in modifier_order else (1, part))
+    return "+".join(canonical)
 
 
 @dataclass

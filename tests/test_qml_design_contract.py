@@ -51,3 +51,11 @@ def test_all_global_shortcuts_have_record_controls_and_signal_routing():
         assert f'objectName: "shortcutRecord_{target}"' in QML
         assert f'controller.recordGlobalShortcut("{target}")' in QML
     assert "function onShortcutCaptured(target, value)" in QML
+
+
+def test_navigation_hover_stays_neutral_and_record_buttons_do_not_overflow():
+    assert "property bool navStyle" not in QML
+    assert "control.navStyle" not in QML
+    assert QML.count("implicitWidth: 106") == 3
+    assert QML.count("activeNeutral: root.shortcutRecordingTarget ===") == 3
+    assert 'text: root.shortcutRecordingTarget === "start" ? "Listening" : "Record"' in QML

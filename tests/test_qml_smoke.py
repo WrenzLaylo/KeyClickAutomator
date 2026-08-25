@@ -59,7 +59,7 @@ def test_workspace_navigation_hover_state_is_isolated_per_button():
         _app.processEvents()
         QTest.qWait(160)
         assert [item.property("pointerHover") for item in buttons] == [index == hovered_index for index in range(3)]
-        assert button.property("background").property("color").name() == "#e8f0ff"
+        assert button.property("background").property("color").name() == "#e5eaf2"
     window.close()
     controller.shutdown()
 
@@ -94,6 +94,27 @@ def test_recorded_global_shortcut_routes_to_the_correct_qml_field():
     controller.runSettingsChanged.emit()
     QTest.qWait(40)
     assert fields["capture"].property("text") == "f8"
+    window.close()
+    controller.shutdown()
+
+
+def test_global_shortcut_recorder_listening_state_is_neutral_and_local():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    buttons = {
+        name: window.findChild(QQuickItem, f"shortcutRecord_{name}")
+        for name in ("start", "capture", "stop")
+    }
+    assert all(button is not None for button in buttons.values())
+    assert all(button.property("implicitWidth") == 106 for button in buttons.values())
+    window.setProperty("shortcutRecordingTarget", "start")
+    _app.processEvents()
+    QTest.qWait(160)
+    assert buttons["start"].property("text") == "Listening"
+    assert buttons["start"].property("activeNeutral") is True
+    assert buttons["start"].property("background").property("color").name() == "#e1e6ee"
+    assert buttons["capture"].property("text") == "Record"
+    assert buttons["stop"].property("text") == "Record"
     window.close()
     controller.shutdown()
 

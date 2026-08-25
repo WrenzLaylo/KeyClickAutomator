@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QFileDialog
 from engine import HOTKEY_NAMED_KEYS, Action, AutomationRunner, RunSettings, load_profile, save_profile
 
 
-APP_VERSION = "3.0.6"
+APP_VERSION = "3.0.7"
 
 
 class ActionListModel(QAbstractListModel):

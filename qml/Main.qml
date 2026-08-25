@@ -73,7 +73,7 @@ ApplicationWindow {
         property bool primary: false
         property bool danger: false
         property bool quiet: false
-        property bool navStyle: false
+        property bool activeNeutral: false
         property string leading: ""
         property bool pointerHover: false
         implicitHeight: 42
@@ -92,14 +92,14 @@ ApplicationWindow {
             Text {
                 visible: control.leading !== ""
                 text: control.leading
-                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : control.navStyle && control.pointerHover ? root.blue : root.ink) : root.ink3
+                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : root.ink) : root.ink3
                 font.family: interSemiBold.name || root.font.family
                 font.pixelSize: 15
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 text: control.text
-                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : control.navStyle && control.pointerHover ? root.blue : root.ink) : root.ink3
+                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : root.ink) : root.ink3
                 font: control.font
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -107,11 +107,11 @@ ApplicationWindow {
         background: Rectangle {
             radius: 12
             color: !control.enabled ? root.surface2
-                 : control.down ? (control.primary ? "#0049C9" : root.surface3)
-                 : control.pointerHover ? (control.primary ? root.blueHover : control.danger ? "#FDECEF" : control.navStyle ? root.blueSoft : root.surface3)
-                 : control.primary ? root.blue : control.quiet ? "transparent" : control.danger ? "#FFF2F4" : root.surface2
-            border.width: control.visualFocus ? 2 : 0
-            border.color: root.blue
+                 : control.down ? (control.primary ? "#0049C9" : control.activeNeutral ? "#D5DBE5" : root.surface3)
+                 : control.pointerHover ? (control.primary ? root.blueHover : control.danger ? "#FDECEF" : control.activeNeutral ? "#DCE1E9" : root.surface3)
+                 : control.primary ? root.blue : control.quiet ? "transparent" : control.danger ? "#FFF2F4" : control.activeNeutral ? "#E1E6EE" : root.surface2
+            border.width: control.visualFocus ? 2 : control.activeNeutral ? 1 : 0
+            border.color: control.visualFocus ? root.blue : "#C7CED9"
             scale: control.down ? 0.975 : 1
             Behavior on color { ColorAnimation { duration: 130 } }
             Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
@@ -243,7 +243,6 @@ ApplicationWindow {
                     text: root.compactNav ? "" : "Open profile"
                     leading: "↗"
                     quiet: true
-                    navStyle: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "Open profile"
                     onClicked: controller.openProfile()
@@ -255,7 +254,6 @@ ApplicationWindow {
                     text: root.compactNav ? "" : "Save profile"
                     leading: "↓"
                     quiet: true
-                    navStyle: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "Save profile"
                     onClicked: controller.saveProfile()
@@ -267,7 +265,6 @@ ApplicationWindow {
                     text: root.compactNav ? "" : "New sequence"
                     leading: "+"
                     quiet: true
-                    navStyle: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "New sequence"
                     onClicked: controller.clearActions()
@@ -958,10 +955,10 @@ ApplicationWindow {
                                 KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey }
                                 KButton {
                                     objectName: "shortcutRecord_start"
-                                    implicitWidth: 78
-                                    text: root.shortcutRecordingTarget === "start" ? "Press…" : "Record"
-                                    leading: root.shortcutRecordingTarget === "start" ? "●" : "⌨"
-                                    primary: root.shortcutRecordingTarget === "start"
+                                    implicitWidth: 106
+                                    text: root.shortcutRecordingTarget === "start" ? "Listening" : "Record"
+                                    leading: root.shortcutRecordingTarget === "start" ? "●" : "○"
+                                    activeNeutral: root.shortcutRecordingTarget === "start"
                                     onClicked: if (controller.recordGlobalShortcut("start")) root.shortcutRecordingTarget = "start"
                                 }
                             }
@@ -971,10 +968,10 @@ ApplicationWindow {
                                 KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey }
                                 KButton {
                                     objectName: "shortcutRecord_capture"
-                                    implicitWidth: 78
-                                    text: root.shortcutRecordingTarget === "capture" ? "Press…" : "Record"
-                                    leading: root.shortcutRecordingTarget === "capture" ? "●" : "⌨"
-                                    primary: root.shortcutRecordingTarget === "capture"
+                                    implicitWidth: 106
+                                    text: root.shortcutRecordingTarget === "capture" ? "Listening" : "Record"
+                                    leading: root.shortcutRecordingTarget === "capture" ? "●" : "○"
+                                    activeNeutral: root.shortcutRecordingTarget === "capture"
                                     onClicked: if (controller.recordGlobalShortcut("capture")) root.shortcutRecordingTarget = "capture"
                                 }
                             }
@@ -984,10 +981,10 @@ ApplicationWindow {
                                 KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey }
                                 KButton {
                                     objectName: "shortcutRecord_stop"
-                                    implicitWidth: 78
-                                    text: root.shortcutRecordingTarget === "stop" ? "Press…" : "Record"
-                                    leading: root.shortcutRecordingTarget === "stop" ? "●" : "⌨"
-                                    primary: root.shortcutRecordingTarget === "stop"
+                                    implicitWidth: 106
+                                    text: root.shortcutRecordingTarget === "stop" ? "Listening" : "Record"
+                                    leading: root.shortcutRecordingTarget === "stop" ? "●" : "○"
+                                    activeNeutral: root.shortcutRecordingTarget === "stop"
                                     onClicked: if (controller.recordGlobalShortcut("stop")) root.shortcutRecordingTarget = "stop"
                                 }
                             }

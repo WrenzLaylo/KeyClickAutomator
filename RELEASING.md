@@ -70,6 +70,9 @@ Installer build:
   drag action.
 - Confirm a minimized, closed, or higher-privilege target produces a clear
   recovery message instead of falling back to desktop input.
+- With the target covered, repeat a zero-delay background click at least 100 times
+  and confirm the target stays responsive. Verify scroll is delivered as individual
+  notches and an unresponsive target is rejected before more input is posted.
 - Confirm **Test once**, **Run from here**, delete undo, and draft recovery.
 - Confirm sequence cards drag by their six-dot grip, show one insertion guide,
   land in the expected order, and still move with **Up**/**Down**. During the drag,

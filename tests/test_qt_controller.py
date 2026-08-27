@@ -36,6 +36,9 @@ class FakeWindowService:
     def ensure_usable(self, hwnd):
         return None
 
+    def ensure_responsive(self, hwnd):
+        return None
+
     def client_size(self, hwnd):
         return 800, 600
 

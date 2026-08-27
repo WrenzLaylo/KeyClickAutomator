@@ -7,9 +7,10 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 
+WM_NULL = 0x0000
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 WM_CHAR = 0x0102
@@ -31,6 +32,11 @@ MK_LBUTTON = 0x0001
 MK_RBUTTON = 0x0002
 MK_MBUTTON = 0x0010
 WHEEL_DELTA = 120
+
+ERROR_ACCESS_DENIED = 5
+ERROR_NOT_ENOUGH_QUOTA = 1816
+SMTO_ABORTIFHUNG = 0x0002
+SMTO_ERRORONEXIT = 0x0020
 
 VK_SHIFT = 0x10
 VK_CONTROL = 0x11
@@ -81,6 +87,7 @@ class WindowService(Protocol):
     def list_windows(self, excluded_process_id: int = 0) -> list[WindowInfo]: ...
     def resolve_window(self, selector: WindowSelector, preferred_hwnd: int = 0) -> WindowInfo: ...
     def ensure_usable(self, hwnd: int) -> None: ...
+    def ensure_responsive(self, hwnd: int) -> None: ...
     def client_size(self, hwnd: int) -> tuple[int, int]: ...
     def screen_to_client(self, hwnd: int, x: int, y: int) -> tuple[int, int]: ...
     def client_to_screen(self, hwnd: int, x: int, y: int) -> tuple[int, int]: ...
@@ -372,6 +379,35 @@ class Win32WindowService:
         if not _USER32.GetClientRect(hwnd, ctypes.byref(rect)) or rect.right <= rect.left or rect.bottom <= rect.top:
             raise WindowTargetError("The target window has no usable content area. Restore or resize it, then try again.")
 
+    @classmethod
+    def ensure_responsive(cls, hwnd: int) -> None:
+        """Fail before input is queued when the target is closed or not pumping messages."""
+        cls.ensure_usable(hwnd)
+        result = ctypes.c_size_t()
+        ctypes.set_last_error(0)
+        delivered = _USER32.SendMessageTimeoutW(
+            hwnd,
+            WM_NULL,
+            0,
+            0,
+            SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
+            350,
+            ctypes.byref(result),
+        )
+        if delivered:
+            return
+        error = ctypes.get_last_error()
+        if not _USER32.IsWindow(hwnd):
+            raise WindowTargetError("The target window closed. Open it, then try again.")
+        if error == ERROR_ACCESS_DENIED:
+            raise WindowTargetError(
+                "Windows blocked the target check because the app has higher privileges. "
+                "Run KeyClick at the same privilege level as the target app."
+            )
+        raise WindowTargetError(
+            "The target window is not responding, so KeyClick stopped before sending more background input."
+        )
+
     @staticmethod
     def screen_to_client(hwnd: int, x: int, y: int) -> tuple[int, int]:
         point = wintypes.POINT(int(x), int(y))
@@ -409,10 +445,18 @@ class Win32WindowService:
 
         current = int(root_hwnd)
         current_point = (int(x), int(y))
+        root_process_id = wintypes.DWORD()
+        _USER32.GetWindowThreadProcessId(root_hwnd, ctypes.byref(root_process_id))
         flags = self.CWP_SKIPINVISIBLE | self.CWP_SKIPDISABLED | self.CWP_SKIPTRANSPARENT
         for _ in range(16):
             child = int(_USER32.ChildWindowFromPointEx(current, wintypes.POINT(*current_point), flags) or 0)
             if not child or child == current:
+                break
+            child_process_id = wintypes.DWORD()
+            _USER32.GetWindowThreadProcessId(child, ctypes.byref(child_process_id))
+            if child_process_id.value != root_process_id.value:
+                # Embedded cross-process surfaces must opt in through their own
+                # automation API. Sending raw input messages to them is unsafe.
                 break
             current = child
             current_point = self.map_root_point(root_hwnd, current, x, y)
@@ -431,11 +475,12 @@ class Win32WindowService:
 
     @classmethod
     def is_button_control(cls, hwnd: int) -> bool:
-        return "button" in cls._class_name(hwnd).casefold()
+        return cls._class_name(hwnd).casefold() == "button"
 
     @classmethod
     def is_edit_control(cls, hwnd: int) -> bool:
-        return "edit" in cls._class_name(hwnd).casefold()
+        class_name = cls._class_name(hwnd).casefold()
+        return class_name == "edit" or class_name.startswith("richedit") or class_name == "msftedit"
 
     @classmethod
     def replace_edit_text(cls, hwnd: int, text: str) -> None:
@@ -454,7 +499,7 @@ class Win32WindowService:
         if delivered:
             return
         error = ctypes.get_last_error()
-        if error == 5:
+        if error == ERROR_ACCESS_DENIED:
             raise WindowTargetError(
                 "Windows blocked background text because the target has higher privileges. "
                 "Run KeyClick at the same privilege level as the target app."
@@ -470,10 +515,15 @@ class Win32WindowService:
         if _USER32.PostMessageW(hwnd, message, wparam, lparam):
             return
         error = ctypes.get_last_error()
-        if error == 5:
+        if error == ERROR_ACCESS_DENIED:
             raise WindowTargetError(
                 "Windows blocked background input because the target has higher privileges. "
                 "Run KeyClick at the same privilege level as the target app."
+            )
+        if error == ERROR_NOT_ENOUGH_QUOTA:
+            raise WindowTargetError(
+                "The target is not processing background input quickly enough. "
+                "KeyClick stopped before its Windows message queue could overflow."
             )
         detail = f" (Windows error {error})" if error else ""
         raise WindowTargetError(f"The target window rejected a background input message{detail}.")
@@ -518,6 +568,10 @@ def _packed_wheel(key_flags: int, delta: int) -> int:
 class WindowMessageBackend:
     """PyAutoGUI-compatible backend that posts input to one background HWND."""
 
+    DEFAULT_MESSAGE_INTERVAL = 0.015
+    RESPONSIVENESS_PROBE_INTERVAL = 0.25
+    EDIT_TEXT_CHUNK_SIZE = 256
+
     _BUTTON_MESSAGES = {
         "left": (WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON),
         "right": (WM_RBUTTONDOWN, WM_RBUTTONUP, MK_RBUTTON),
@@ -528,13 +582,53 @@ class WindowMessageBackend:
         0x2D, 0x2E, VK_LWIN, 0x5D, VK_RMENU,
     }
 
-    def __init__(self, root_hwnd: int, service: WindowService | None = None) -> None:
+    def __init__(
+        self,
+        root_hwnd: int,
+        service: WindowService | None = None,
+        *,
+        message_interval: float = DEFAULT_MESSAGE_INTERVAL,
+        clock: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.root_hwnd = int(root_hwnd)
         self.service = service or Win32WindowService()
+        self._message_interval = max(0.0, float(message_interval))
+        self._clock = clock
+        self._sleep = sleeper
+        self._last_message_at: float | None = None
+        self._last_probe_at: float | None = None
         self._point: tuple[int, int] | None = None
         self._held_button: str | None = None
         self._drag_target: int = 0
-        self.service.ensure_usable(self.root_hwnd)
+        self.service.ensure_responsive(self.root_hwnd)
+        self._last_probe_at = self._clock()
+
+    def _ensure_target_ready(self) -> None:
+        now = self._clock()
+        if self._last_probe_at is None or now - self._last_probe_at >= self.RESPONSIVENESS_PROBE_INTERVAL:
+            self.service.ensure_responsive(self.root_hwnd)
+            self._last_probe_at = self._clock()
+        else:
+            self.service.ensure_usable(self.root_hwnd)
+
+    def _pace_message(self) -> None:
+        if self._last_message_at is not None and self._message_interval > 0:
+            remaining = self._message_interval - (self._clock() - self._last_message_at)
+            if remaining > 0:
+                self._sleep(remaining)
+
+    def _post_message(self, hwnd: int, message: int, wparam: int, lparam: int) -> None:
+        self._ensure_target_ready()
+        self._pace_message()
+        self.service.post_message(hwnd, message, wparam, lparam)
+        self._last_message_at = self._clock()
+
+    def _replace_edit_text(self, hwnd: int, text: str) -> None:
+        self._ensure_target_ready()
+        self._pace_message()
+        self.service.replace_edit_text(hwnd, text)
+        self._last_message_at = self._clock()
 
     def scale_point(
         self,
@@ -582,7 +676,7 @@ class WindowMessageBackend:
         for virtual_key in sequence:
             is_alt = virtual_key in alt_keys
             system_message = alt_down or is_alt
-            self.service.post_message(
+            self._post_message(
                 target,
                 WM_SYSKEYDOWN if system_message else WM_KEYDOWN,
                 virtual_key,
@@ -593,7 +687,7 @@ class WindowMessageBackend:
         for virtual_key in reversed(sequence):
             is_alt = virtual_key in alt_keys
             system_message = alt_down or is_alt
-            self.service.post_message(
+            self._post_message(
                 target,
                 WM_SYSKEYUP if system_message else WM_KEYUP,
                 virtual_key,
@@ -611,20 +705,19 @@ class WindowMessageBackend:
     def write(self, text: str, interval: float = 0.0, _pause: bool = True) -> None:
         target = self.service.keyboard_target(self.root_hwnd)
         if self.service.is_edit_control(target):
-            if interval <= 0:
-                self.service.replace_edit_text(target, text)
-                return
-            for character in text:
-                self.service.replace_edit_text(target, character)
-                time.sleep(interval)
+            chunk_size = 1 if interval > 0 else self.EDIT_TEXT_CHUNK_SIZE
+            for offset in range(0, len(text), chunk_size):
+                self._replace_edit_text(target, text[offset:offset + chunk_size])
+                if interval > 0:
+                    self._sleep(interval)
             return
         for character in text:
             units = character.encode("utf-16-le", errors="surrogatepass")
             for offset in range(0, len(units), 2):
                 code_unit = int.from_bytes(units[offset:offset + 2], "little")
-                self.service.post_message(target, WM_CHAR, code_unit, 1)
+                self._post_message(target, WM_CHAR, code_unit, 1)
             if interval > 0:
-                time.sleep(interval)
+                self._sleep(interval)
 
     def _target_for_point(self, x: int, y: int) -> tuple[int, int, int]:
         if self._drag_target:
@@ -636,7 +729,7 @@ class WindowMessageBackend:
         self._point = (int(x), int(y))
         target, local_x, local_y = self._target_for_point(*self._point)
         flags = self._BUTTON_MESSAGES[self._held_button][2] if self._held_button else 0
-        self.service.post_message(target, WM_MOUSEMOVE, flags, _packed_point(local_x, local_y))
+        self._post_message(target, WM_MOUSEMOVE, flags, _packed_point(local_x, local_y))
 
     def click(self, x: int | None = None, y: int | None = None, button: str = "left") -> None:
         if x is None or y is None:
@@ -648,13 +741,13 @@ class WindowMessageBackend:
         self._point = (int(x), int(y))
         target, local_x, local_y = self.service.mouse_target(self.root_hwnd, *self._point)
         if button == "left" and self.service.is_button_control(target):
-            self.service.post_message(target, BM_CLICK, 0, 0)
+            self._post_message(target, BM_CLICK, 0, 0)
             return
         down, up, flag = self._BUTTON_MESSAGES[button]
         packed = _packed_point(local_x, local_y)
-        self.service.post_message(target, WM_MOUSEMOVE, 0, packed)
-        self.service.post_message(target, down, flag, packed)
-        self.service.post_message(target, up, 0, packed)
+        self._post_message(target, WM_MOUSEMOVE, 0, packed)
+        self._post_message(target, down, flag, packed)
+        self._post_message(target, up, 0, packed)
 
     def doubleClick(self, x: int | None = None, y: int | None = None, button: str = "left") -> None:
         if button != "left":
@@ -668,32 +761,30 @@ class WindowMessageBackend:
         self._point = (int(x), int(y))
         target, local_x, local_y = self.service.mouse_target(self.root_hwnd, *self._point)
         if self.service.is_button_control(target):
-            self.service.post_message(target, BM_CLICK, 0, 0)
-            self.service.post_message(target, BM_CLICK, 0, 0)
+            self._post_message(target, BM_CLICK, 0, 0)
+            self._post_message(target, BM_CLICK, 0, 0)
             return
         packed = _packed_point(local_x, local_y)
-        self.service.post_message(target, WM_MOUSEMOVE, 0, packed)
-        self.service.post_message(target, WM_LBUTTONDOWN, MK_LBUTTON, packed)
-        self.service.post_message(target, WM_LBUTTONUP, 0, packed)
-        self.service.post_message(target, WM_LBUTTONDBLCLK, MK_LBUTTON, packed)
-        self.service.post_message(target, WM_LBUTTONUP, 0, packed)
+        self._post_message(target, WM_MOUSEMOVE, 0, packed)
+        self._post_message(target, WM_LBUTTONDOWN, MK_LBUTTON, packed)
+        self._post_message(target, WM_LBUTTONUP, 0, packed)
+        self._post_message(target, WM_LBUTTONDBLCLK, MK_LBUTTON, packed)
+        self._post_message(target, WM_LBUTTONUP, 0, packed)
 
     def scroll(self, amount: int) -> None:
         if self._point is None:
             raise WindowTargetError("Record a window position before adding a background scroll action.")
         target, local_x, local_y = self.service.mouse_target(self.root_hwnd, *self._point)
         screen_x, screen_y = self.service.client_to_screen(self.root_hwnd, *self._point)
-        self.service.post_message(target, WM_MOUSEMOVE, 0, _packed_point(local_x, local_y))
-        remaining = int(amount)
-        while remaining:
-            step = max(-120, min(120, remaining))
-            self.service.post_message(
+        self._post_message(target, WM_MOUSEMOVE, 0, _packed_point(local_x, local_y))
+        direction = 1 if amount > 0 else -1
+        for _ in range(abs(int(amount))):
+            self._post_message(
                 target,
                 WM_MOUSEWHEEL,
-                _packed_wheel(0, step * WHEEL_DELTA),
+                _packed_wheel(0, direction * WHEEL_DELTA),
                 _packed_point(screen_x, screen_y),
             )
-            remaining -= step
 
     def mouseDown(self, button: str = "left", _pause: bool = True) -> None:
         if self._point is None:
@@ -704,7 +795,7 @@ class WindowMessageBackend:
         down, _up, flag = self._BUTTON_MESSAGES[button]
         self._held_button = button
         self._drag_target = target
-        self.service.post_message(target, down, flag, _packed_point(local_x, local_y))
+        self._post_message(target, down, flag, _packed_point(local_x, local_y))
 
     def mouseUp(self, button: str = "left", _pause: bool = True) -> None:
         if self._point is None:
@@ -713,7 +804,7 @@ class WindowMessageBackend:
             raise WindowTargetError(f"Unsupported background mouse button: {button}")
         target, local_x, local_y = self._target_for_point(*self._point)
         _down, up, _flag = self._BUTTON_MESSAGES[button]
-        self.service.post_message(target, up, 0, _packed_point(local_x, local_y))
+        self._post_message(target, up, 0, _packed_point(local_x, local_y))
         self._held_button = None
         self._drag_target = 0
 
@@ -722,6 +813,6 @@ class WindowMessageBackend:
         try:
             self.moveTo(x, y, _pause=False)
             if duration > 0:
-                time.sleep(duration)
+                self._sleep(duration)
         finally:
             self.mouseUp(button=button, _pause=False)

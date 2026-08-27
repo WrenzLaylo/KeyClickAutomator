@@ -29,6 +29,9 @@ class PickerWindowService:
     def ensure_usable(self, hwnd):
         return None
 
+    def ensure_responsive(self, hwnd):
+        return None
+
 
 def visual_children_named(item, prefix):
     matches = []

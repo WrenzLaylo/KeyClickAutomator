@@ -124,8 +124,11 @@ class Action:
         if self.kind in {"scroll", "drag"} or (self.kind in click_actions and not self.use_current_pointer):
             if self.x is None or self.y is None or self.x < 0 or self.y < 0:
                 raise ValueError("Mouse actions need a recorded non-negative X/Y position.")
-        if self.kind == "scroll" and self.amount == 0:
-            raise ValueError("Scroll amount cannot be zero. Use a positive number for up or negative for down.")
+        if self.kind == "scroll":
+            if self.amount == 0:
+                raise ValueError("Scroll amount cannot be zero. Use a positive number for up or negative for down.")
+            if abs(self.amount) > 1_000:
+                raise ValueError("Scroll amount must be between -1000 and 1000 steps.")
         if self.kind == "drag":
             if self.x2 is None or self.y2 is None or self.x2 < 0 or self.y2 < 0:
                 raise ValueError("Drag actions need a non-negative destination X/Y position.")

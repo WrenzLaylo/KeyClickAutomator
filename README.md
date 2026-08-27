@@ -17,7 +17,7 @@
   <a href="#build-a-release">Build a release</a>
 </p>
 
-> Current release: **3.4.0** · Windows 10/11 · 64-bit
+> Current release: **3.4.1** · Windows 10/11 · 64-bit
 
 ## Why KeyClick
 
@@ -43,8 +43,8 @@ and stop the automation immediately whenever you need to.
 
 | Build | Best for | What you need |
 | --- | --- | --- |
-| `KeyClickAutomator-Portable-3.4.0.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
-| `KeyClickAutomator-Setup-3.4.0.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
+| `KeyClickAutomator-Portable-3.4.1.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
+| `KeyClickAutomator-Setup-3.4.1.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
 
 Both builds are created in the `release` folder. The portable build is one
 standalone file. The setup download is smaller because it installs the bundled
@@ -124,11 +124,15 @@ selected window. It can stay behind other windows and your physical pointer does
 not move, so you can keep using the mouse elsewhere. Keep the target open,
 restored, and at the same privilege level as KeyClick.
 
-Background delivery works best with standard Windows controls. Some games,
-raw-input applications, elevated programs, and modern or custom-rendered controls
-may ignore message-based input. If an app does not respond, switch back to
-**Desktop** mode. KeyClick blocks desktop-relative actions from running in window
-mode (and vice versa) until their positions are recorded for the selected target.
+Background delivery works best with standard Windows controls. KeyClick paces
+every message, checks that the target is still responsive, splits large text
+inserts, and sends wheel actions as individual notches so a fast sequence cannot
+flood the target's Windows message queue. Some games, raw-input applications,
+elevated programs, and modern or custom-rendered controls may still ignore or
+reject message-based input. Use **Test once** before a repeating run. If the
+target becomes unstable or closes, do not retry it in background mode; switch to
+**Desktop** mode instead. KeyClick blocks desktop-relative actions from running
+in window mode (and vice versa) until their positions are recorded again.
 
 ## Controls and safety
 
@@ -169,7 +173,16 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - A deleted action can be restored with **Undo** or `Ctrl+Z`.
 - Profiles created by earlier 3.x releases remain compatible.
 
-## What's new in 3.4.0
+## What's new in 3.4.1
+
+- Background messages are rate-limited and the target is checked for responsiveness
+  throughout a run, preventing zero-delay sequences from flooding its message queue
+- Scroll actions now deliver one standard wheel notch at a time, and extreme scroll
+  values are rejected before a run starts
+- Large native text inserts are split into bounded chunks, and control-specific
+  commands are sent only to genuine standard Windows button and edit controls
+
+### Previous release: 3.4.0
 
 - A visual target picker shows Desktop and open app windows with previews, names,
   selected state, refresh, and clear handling for minimized windows
@@ -182,7 +195,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - The unsaved-changes dialog now uses contained, balanced Cancel, Discard, and
   Save actions that stay inside the modal at the minimum window size
 
-### Previous release: 3.3.0
+### Earlier release: 3.3.0
 
 - The in-app **Profiles** drawer lists saved sequences beside the portable app
 - Profiles open with one click while unsaved edits remain protected
@@ -193,6 +206,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 
 | Version | Summary |
 | --- | --- |
+| 3.4.1 | Safer paced background delivery with responsiveness and queue-flood protection |
 | 3.4.0 | Visual window picker, frozen point capture, and resize-aware window positions |
 | 3.3.0 | In-app profile library with safe one-click switching and folder discovery |
 | 3.2.1 | Drag-to-reorder sequence cards and corrected recovery-dialog actions |
@@ -242,7 +256,7 @@ Build the single-file portable app:
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller --clean --noconfirm KeyClickAutomator.spec
 New-Item -ItemType Directory -Force release | Out-Null
-Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.0.exe
+Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.1.exe
 ```
 
 Build the installer payload, then compile it with Inno Setup 6:

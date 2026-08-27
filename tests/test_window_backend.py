@@ -23,12 +23,16 @@ class FakeWindowService:
     def __init__(self):
         self.messages = []
         self.usable = []
+        self.responsive = []
         self.button_control = False
         self.edit_control = False
         self.replaced_text = []
 
     def ensure_usable(self, hwnd):
         self.usable.append(hwnd)
+
+    def ensure_responsive(self, hwnd):
+        self.responsive.append(hwnd)
 
     def keyboard_target(self, root_hwnd):
         return 222
@@ -74,7 +78,7 @@ class FakeWindowService:
 
 def test_background_click_posts_to_the_window_without_moving_the_physical_pointer():
     service = FakeWindowService()
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
 
     backend.click(40, 70, button="left")
 
@@ -88,7 +92,7 @@ def test_background_click_posts_to_the_window_without_moving_the_physical_pointe
 
 def test_background_keyboard_and_text_are_addressed_to_the_window_queue():
     service = FakeWindowService()
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
 
     backend.hotkey("ctrl", "s")
     backend.write("A")
@@ -106,7 +110,7 @@ def test_background_keyboard_and_text_are_addressed_to_the_window_queue():
 def test_native_button_controls_use_their_background_safe_click_command():
     service = FakeWindowService()
     service.button_control = True
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
 
     backend.click(40, 70)
 
@@ -116,7 +120,7 @@ def test_native_button_controls_use_their_background_safe_click_command():
 def test_native_edit_controls_use_background_safe_text_replacement():
     service = FakeWindowService()
     service.edit_control = True
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
 
     backend.write("hello")
 
@@ -126,7 +130,7 @@ def test_native_edit_controls_use_background_safe_text_replacement():
 
 def test_alt_shortcuts_use_system_key_messages_with_context():
     service = FakeWindowService()
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
 
     backend.hotkey("alt", "a")
 
@@ -141,7 +145,7 @@ def test_alt_shortcuts_use_system_key_messages_with_context():
 
 def test_background_scroll_uses_the_saved_window_position():
     service = FakeWindowService()
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
     backend.moveTo(40, 70)
     service.messages.clear()
 
@@ -149,12 +153,14 @@ def test_background_scroll_uses_the_saved_window_position():
 
     assert service.messages == [
         (333, WM_MOUSEMOVE, 0, _packed_point(30, 50)),
-        (333, WM_MOUSEWHEEL, _packed_wheel(0, -3 * 120), _packed_point(140, 270)),
+        (333, WM_MOUSEWHEEL, _packed_wheel(0, -120), _packed_point(140, 270)),
+        (333, WM_MOUSEWHEEL, _packed_wheel(0, -120), _packed_point(140, 270)),
+        (333, WM_MOUSEWHEEL, _packed_wheel(0, -120), _packed_point(140, 270)),
     ]
 
 
 def test_background_click_rejects_follow_current_pointer():
-    backend = WindowMessageBackend(111, FakeWindowService())
+    backend = WindowMessageBackend(111, FakeWindowService(), message_interval=0)
 
     try:
         backend.click(None, None)
@@ -166,8 +172,61 @@ def test_background_click_rejects_follow_current_pointer():
 
 def test_recorded_window_point_scales_to_the_current_client_size():
     service = FakeWindowService()
-    backend = WindowMessageBackend(111, service)
+    backend = WindowMessageBackend(111, service, message_interval=0)
 
     assert backend.scale_point(500, 400, 1000, 800) == (250, 150)
     assert backend.scale_point(999, 799, 1000, 800) == (499, 299)
     assert backend.scale_point(40, 70, 0, 0) == (40, 70)
+
+
+def test_background_messages_are_paced_to_avoid_flooding_the_target_queue():
+    service = FakeWindowService()
+    now = [10.0]
+    waits = []
+
+    def clock():
+        return now[0]
+
+    def sleep(seconds):
+        waits.append(seconds)
+        now[0] += seconds
+
+    backend = WindowMessageBackend(
+        111,
+        service,
+        message_interval=0.02,
+        clock=clock,
+        sleeper=sleep,
+    )
+
+    backend.click(40, 70)
+
+    assert waits == [0.02, 0.02]
+    assert service.responsive == [111]
+
+
+def test_long_native_edit_text_is_split_into_bounded_messages():
+    service = FakeWindowService()
+    service.edit_control = True
+    backend = WindowMessageBackend(111, service, message_interval=0)
+
+    backend.write("x" * 600)
+
+    assert [len(text) for _, text in service.replaced_text] == [256, 256, 88]
+
+
+def test_unresponsive_target_is_rejected_before_any_input_is_posted():
+    class UnresponsiveService(FakeWindowService):
+        def ensure_responsive(self, hwnd):
+            raise WindowTargetError("not responding")
+
+    service = UnresponsiveService()
+
+    try:
+        WindowMessageBackend(111, service, message_interval=0)
+    except WindowTargetError as exc:
+        assert "not responding" in str(exc)
+    else:
+        raise AssertionError("Expected a WindowTargetError")
+
+    assert service.messages == []

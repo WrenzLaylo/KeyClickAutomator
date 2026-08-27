@@ -1614,7 +1614,7 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     anchors.margins: 11
                                     wrapMode: Text.WordWrap
-                                    text: "Your pointer remains free and the target can stay behind other windows. Keep it open and restored. Elevated, raw-input, game, or some modern app controls may reject background input."
+                                    text: "Your pointer remains free and the target may stay behind other windows. Use Test once first. If the target becomes unstable or closes, switch to Desktop mode instead of retrying."
                                     color: "#785A12"
                                     font.family: interMedium.name || root.font.family
                                     font.pixelSize: 10

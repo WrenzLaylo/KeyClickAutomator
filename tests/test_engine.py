@@ -205,6 +205,13 @@ def test_click_actions_can_follow_the_live_pointer():
         Action("scroll", amount=-1, use_current_pointer=True).validate()
 
 
+def test_scroll_amount_is_bounded_to_prevent_accidental_message_floods():
+    Action("scroll", x=10, y=20, amount=-1_000).validate()
+    Action("scroll", x=10, y=20, amount=1_000).validate()
+    with pytest.raises(ValueError, match="between -1000 and 1000"):
+        Action("scroll", x=10, y=20, amount=1_001).validate()
+
+
 def test_progress_reports_the_action_being_executed():
     events = []
     actions = [

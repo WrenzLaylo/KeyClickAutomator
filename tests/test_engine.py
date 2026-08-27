@@ -126,6 +126,102 @@ def test_advanced_mouse_actions():
     ]
 
 
+def test_window_mouse_actions_use_resize_aware_coordinates_at_execution_time():
+    class ResponsiveBackend(FakeBackend):
+        def scale_point(self, x, y, reference_width, reference_height):
+            self.calls.append(("scale_point", x, y, reference_width, reference_height))
+            return x // 2, y // 2
+
+    backend = ResponsiveBackend()
+    action = Action(
+        "left_click",
+        x=600,
+        y=400,
+        coordinate_space="window",
+        reference_width=1200,
+        reference_height=800,
+        delay_after=0,
+    )
+
+    assert AutomationRunner(backend).run([action], RunSettings(start_delay=0), threading.Event()) is True
+    assert backend.calls == [
+        ("scale_point", 600, 400, 1200, 800),
+        ("click", 300, 200, "left"),
+    ]
+
+
+def test_drag_points_keep_independent_window_size_references():
+    class ResponsiveDragBackend(FakeBackend):
+        def scale_point(self, x, y, reference_width, reference_height):
+            self.calls.append(("scale_point", x, y, reference_width, reference_height))
+            return round(x * 1000 / reference_width), round(y * 1000 / reference_height)
+
+    backend = ResponsiveDragBackend()
+    action = Action(
+        "drag",
+        x=600,
+        y=400,
+        x2=300,
+        y2=200,
+        duration=0,
+        coordinate_space="window",
+        reference_width=1200,
+        reference_height=800,
+        reference_width2=600,
+        reference_height2=400,
+        delay_after=0,
+    )
+
+    assert AutomationRunner(backend).run([action], RunSettings(start_delay=0), threading.Event()) is True
+    assert backend.calls[:2] == [
+        ("scale_point", 600, 400, 1200, 800),
+        ("scale_point", 300, 200, 600, 400),
+    ]
+    assert backend.calls[2:] == [
+        ("moveTo", 500, 500),
+        ("mouseDown", "left"),
+        ("moveTo", 500, 500),
+        ("mouseUp", "left"),
+    ]
+
+
+def test_click_actions_can_follow_the_live_pointer():
+    backend = FakeBackend()
+    actions = [
+        Action("left_click", use_current_pointer=True, delay_after=0),
+        Action("right_click", use_current_pointer=True, delay_after=0),
+        Action("double_click", use_current_pointer=True, delay_after=0),
+        Action("middle_click", use_current_pointer=True, delay_after=0),
+    ]
+
+    assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0), threading.Event()) is True
+    assert backend.calls == [
+        ("click", None, None, "left"),
+        ("click", None, None, "right"),
+        ("doubleClick", None, None, "left"),
+        ("click", None, None, "middle"),
+    ]
+    with pytest.raises(ValueError, match="only for click actions"):
+        Action("scroll", amount=-1, use_current_pointer=True).validate()
+
+
+def test_progress_reports_the_action_being_executed():
+    events = []
+    actions = [
+        Action("key", value="x", enabled=False, delay_after=0),
+        Action("key", value="y", delay_after=0),
+    ]
+
+    assert AutomationRunner(FakeBackend()).run(
+        actions,
+        RunSettings(start_delay=0),
+        threading.Event(),
+        lambda phase, current, total: events.append((phase, current, total)),
+    ) is True
+    assert ("action", 1, 2) in events
+    assert not any(event == ("action", 0, 2) for event in events)
+
+
 def test_per_action_repeat_runs_only_that_action_multiple_times():
     backend = FakeBackend()
     actions = [Action("key", value="x", repeats=3, delay_after=0)]
@@ -310,3 +406,63 @@ def test_custom_shortcuts_allow_old_default_key_as_action(tmp_path: Path):
     backend = FakeBackend()
     assert AutomationRunner(backend).run(loaded_actions, loaded_settings, threading.Event()) is True
     assert backend.calls == [("press", "f6")]
+
+
+def test_mouse_coordinate_space_is_explicit_and_live_pointer_stays_desktop_only():
+    Action("left_click", x=10, y=20, coordinate_space="window").validate()
+    Action(
+        "left_click",
+        x=10,
+        y=20,
+        coordinate_space="window",
+        reference_width=800,
+        reference_height=600,
+    ).validate()
+    with pytest.raises(ValueError, match="screen or window"):
+        Action("left_click", x=10, y=20, coordinate_space="unknown").validate()
+    with pytest.raises(ValueError, match="only for Desktop"):
+        Action("left_click", use_current_pointer=True, coordinate_space="window").validate()
+    with pytest.raises(ValueError, match="both width and height"):
+        Action("left_click", x=10, y=20, coordinate_space="window", reference_width=800).validate()
+
+
+def test_background_target_round_trips_with_window_relative_actions(tmp_path: Path):
+    path = tmp_path / "background.kca.json"
+    actions = [Action(
+        "left_click",
+        x=45,
+        y=67,
+        coordinate_space="window",
+        reference_width=1024,
+        reference_height=768,
+    )]
+    settings = RunSettings(
+        target_mode="window",
+        target_window_title="Calculator",
+        target_window_class="ApplicationFrameWindow",
+        target_executable=r"C:\\Windows\\System32\\ApplicationFrameHost.exe",
+    )
+
+    save_profile(path, actions, settings)
+    loaded_actions, loaded_settings = load_profile(path)
+
+    assert loaded_actions == actions
+    assert loaded_settings == settings
+
+
+def test_legacy_profile_defaults_to_desktop_screen_coordinates(tmp_path: Path):
+    path = tmp_path / "legacy-mouse.kca.json"
+    path.write_text(json.dumps({
+        "version": 1,
+        "actions": [{"kind": "left_click", "x": 12, "y": 34}],
+        "settings": {},
+    }), encoding="utf-8")
+
+    actions, settings = load_profile(path)
+
+    assert actions[0].coordinate_space == "screen"
+    assert actions[0].reference_width == 0
+    assert actions[0].reference_height == 0
+    assert actions[0].reference_width2 == 0
+    assert actions[0].reference_height2 == 0
+    assert settings.target_mode == "desktop"

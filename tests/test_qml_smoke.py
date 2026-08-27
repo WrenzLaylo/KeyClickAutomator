@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -7,10 +8,26 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+import qt_controller
 from qt_app import build_engine, create_application
+from window_backend import WindowInfo
 
 
 _app = QApplication.instance() or QApplication([])
+
+
+class PickerWindowService:
+    def __init__(self):
+        self.windows = [
+            WindowInfo(1001, "Team chat", "Chrome_WidgetWin_1", r"C:\\Apps\\Discord.exe", 51),
+            WindowInfo(1002, "Daily meeting - Google Meet", "Chrome_WidgetWin_1", r"C:\\Apps\\chrome.exe", 52),
+        ]
+
+    def list_windows(self, excluded_process_id=0):
+        return self.windows
+
+    def ensure_usable(self, hwnd):
+        return None
 
 
 def visual_children_named(item, prefix):
@@ -162,6 +179,181 @@ def test_sequence_rows_form_a_numbered_workflow_and_mark_the_selected_step():
     controller.shutdown()
 
 
+def test_sequence_drag_handle_reorders_actions_and_marks_the_drop_position():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(900)
+    window.setHeight(840)
+    for value in ("a", "b", "c"):
+        controller.addAction({"kind": "key", "value": value})
+    _app.processEvents()
+    QTest.qWait(180)
+
+    handles = visual_children_named(window.contentItem(), "actionDragHandle_")
+    assert len(handles) == 3
+    first_handle = next(item for item in handles if item.objectName() == "actionDragHandle_0")
+    ordered = lambda prefix: sorted(
+        visual_children_named(window.contentItem(), prefix),
+        key=lambda item: item.mapToScene(QPointF(0, 0)).y(),
+    )
+    first_badge = ordered("stepBadge")[0]
+    first_connector = ordered("sequenceConnector")[0]
+    first_surface = ordered("actionCardSurface")[0]
+    badge_y = first_badge.mapToScene(QPointF(0, 0)).y()
+    surface_y = first_surface.mapToScene(QPointF(0, 0)).y()
+    start = first_handle.mapToScene(
+        QPointF(first_handle.width() / 2, first_handle.height() / 2)
+    )
+    start_point = QPoint(round(start.x()), round(start.y()))
+    end_point = QPoint(start_point.x(), start_point.y() + 164)
+
+    QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, start_point)
+    QTest.mouseMove(window, QPoint(start_point.x(), start_point.y() + 20), 20)
+    QTest.mouseMove(window, end_point, 40)
+    QTest.qWait(60)
+    assert window.property("draggedActionIndex") == 0
+    assert window.property("dragTargetIndex") == 2
+    assert abs(first_badge.mapToScene(QPointF(0, 0)).y() - badge_y) < 0.1
+    assert first_connector.isVisible() is True
+    assert first_surface.mapToScene(QPointF(0, 0)).y() > surface_y + 100
+    indicators = visual_children_named(window.contentItem(), "sequenceDropIndicator_")
+    assert sum(item.isVisible() for item in indicators) == 1
+
+    QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, end_point)
+    QTest.qWait(240)
+    assert [action.value for action in controller.actions] == ["b", "c", "a"]
+    assert controller.selectedIndex == 2
+    assert window.property("draggedActionIndex") == -1
+    window.close()
+    controller.shutdown()
+
+
+def test_recovery_dialog_actions_are_sized_and_contained_in_the_modal():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(900)
+    window.setHeight(640)
+    dialog = window.findChild(QObject, "recoveryDialog")
+    assert dialog is not None
+    QMetaObject.invokeMethod(dialog, "open", Qt.DirectConnection)
+    QTest.qWait(100)
+
+    background = dialog.property("background")
+    discard = window.findChild(QQuickItem, "recoveryDiscardButton")
+    recover = window.findChild(QQuickItem, "recoveryAcceptButton")
+    assert background is not None and discard is not None and recover is not None
+    background_position = background.mapToScene(QPointF(0, 0))
+    discard_position = discard.mapToScene(QPointF(0, 0))
+    recover_position = recover.mapToScene(QPointF(0, 0))
+
+    assert abs(discard.width() - 104) < 0.1
+    assert abs(recover.width() - 164) < 0.1
+    assert abs(discard_position.y() - recover_position.y()) < 0.1
+    assert discard_position.x() >= background_position.x() + 20
+    assert recover_position.x() + recover.width() <= background_position.x() + background.width() - 20
+    assert recover_position.y() + recover.height() <= background_position.y() + background.height() - 20
+    assert recover_position.x() - (discard_position.x() + discard.width()) >= 7
+
+    QMetaObject.invokeMethod(dialog, "close", Qt.DirectConnection)
+    window.close()
+    controller.shutdown()
+
+
+def test_unsaved_dialog_actions_are_grouped_and_contained_in_the_modal():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(900)
+    window.setHeight(640)
+    dialog = window.findChild(QObject, "unsavedChangesDialog")
+    assert dialog is not None
+    QMetaObject.invokeMethod(dialog, "open", Qt.DirectConnection)
+    QTest.qWait(100)
+
+    background = dialog.property("background")
+    cancel = window.findChild(QQuickItem, "unsavedCancelButton")
+    discard = window.findChild(QQuickItem, "unsavedDiscardButton")
+    save = window.findChild(QQuickItem, "unsavedSaveButton")
+    assert all(item is not None for item in (background, cancel, discard, save))
+    background_position = background.mapToScene(QPointF(0, 0))
+    cancel_position = cancel.mapToScene(QPointF(0, 0))
+    discard_position = discard.mapToScene(QPointF(0, 0))
+    save_position = save.mapToScene(QPointF(0, 0))
+
+    assert abs(cancel.width() - 88) < 0.1
+    assert abs(discard.width() - 96) < 0.1
+    assert abs(save.width() - 168) < 0.1
+    assert abs(cancel_position.y() - discard_position.y()) < 0.1
+    assert abs(discard_position.y() - save_position.y()) < 0.1
+    assert cancel_position.x() >= background_position.x() + 20
+    assert save_position.x() + save.width() <= background_position.x() + background.width() - 20
+    assert save_position.y() + save.height() <= background_position.y() + background.height() - 20
+    assert discard_position.x() - (cancel_position.x() + cancel.width()) >= 7
+    assert save_position.x() - (discard_position.x() + discard.width()) >= 7
+
+    QMetaObject.invokeMethod(dialog, "close", Qt.DirectConnection)
+    window.close()
+    controller.shutdown()
+
+
+def test_profile_library_switches_profiles_and_protects_unsaved_changes(tmp_path):
+    first_path = tmp_path / "First sequence.kca.json"
+    second_path = tmp_path / "Second sequence.kca.json"
+    qt_controller.save_profile(
+        first_path,
+        [qt_controller.Action("key", value="a")],
+        qt_controller.RunSettings(),
+    )
+    qt_controller.save_profile(
+        second_path,
+        [qt_controller.Action("key", value="b")],
+        qt_controller.RunSettings(),
+    )
+    engine, controller = build_engine(
+        start_hotkeys=False,
+        profile_directory=tmp_path,
+    )
+    window = engine.rootObjects()[0]
+    drawer = window.findChild(QObject, "profileLibraryDrawer")
+    unsaved = window.findChild(QObject, "unsavedChangesDialog")
+    assert drawer is not None and unsaved is not None
+    QMetaObject.invokeMethod(drawer, "open", Qt.DirectConnection)
+    QTest.qWait(280)
+
+    rows = visual_children_named(window.contentItem(), "profileLibraryRow_")
+    assert len(rows) == 2
+    first_row = next(
+        row for row in rows if row.property("profilePath") == str(first_path.resolve())
+    )
+    QMetaObject.invokeMethod(first_row, "click", Qt.DirectConnection)
+    QTest.qWait(220)
+    assert controller.currentProfileName == "First sequence"
+    assert drawer.property("opened") is False
+
+    controller.addAction({"kind": "key", "value": "x"})
+    assert controller.dirty is True
+    QMetaObject.invokeMethod(drawer, "open", Qt.DirectConnection)
+    QTest.qWait(280)
+    rows = visual_children_named(window.contentItem(), "profileLibraryRow_")
+    second_row = next(
+        row for row in rows if row.property("profilePath") == str(second_path.resolve())
+    )
+    QMetaObject.invokeMethod(second_row, "click", Qt.DirectConnection)
+    QTest.qWait(100)
+
+    assert unsaved.property("opened") is True
+    assert controller.currentProfileName == "First sequence"
+    assert window.property("pendingProfilePath") == str(second_path.resolve())
+    discard = window.findChild(QQuickItem, "unsavedDiscardButton")
+    assert discard is not None
+    QMetaObject.invokeMethod(discard, "click", Qt.DirectConnection)
+    QTest.qWait(240)
+    assert controller.currentProfileName == "Second sequence"
+    assert [action.value for action in controller.actions] == ["b"]
+    assert drawer.property("opened") is False
+    window.close()
+    controller.shutdown()
+
+
 def test_action_toggle_animates_both_directions_and_remains_clickable_when_off():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
@@ -247,7 +439,7 @@ def test_compact_shortcuts_fit_their_dock_and_run_controls_are_balanced():
     assert len(shortcuts) == 3
     assert [(item.property("keyText"), item.property("labelText")) for item in shortcuts] == [
         ("f6", "Start"),
-        ("f8", "Capture"),
+        ("f8", "Record"),
         ("f9", "Stop"),
     ]
     assert len({(item.width(), item.height()) for item in shortcuts}) == 1
@@ -276,16 +468,150 @@ def test_compact_shortcuts_fit_their_dock_and_run_controls_are_balanced():
     controller.shutdown()
 
 
-def test_create_first_action_button_adds_the_configured_action():
+def test_create_first_action_button_opens_the_editor_without_inserting_a_default():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
     button = window.findChild(QQuickItem, "createFirstAction")
     assert button is not None
     QMetaObject.invokeMethod(button, "click", Qt.DirectConnection)
     QTest.qWait(80)
+    assert controller.actionModel.rowCount() == 0
+    assert window.property("activeInspectorTab") == 0
+    assert window.property("editorIndex") == -1
+    assert window.property("inspectorOpen") is True
+    window.close()
+    controller.shutdown()
+
+
+def test_click_action_can_be_added_in_follow_current_pointer_mode():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    picker = window.findChild(QQuickItem, "actionTypePicker")
+    follow_pointer = window.findChild(QQuickItem, "followPointerSwitch")
+    commit = window.findChild(QQuickItem, "actionCommitButton")
+    assert all(item is not None for item in (picker, follow_pointer, commit))
+
+    picker.setProperty("currentIndex", 3)
+    follow_pointer.setProperty("checked", True)
+    _app.processEvents()
+    QMetaObject.invokeMethod(commit, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+
     assert controller.actionModel.rowCount() == 1
-    assert controller.actions[0].kind == "key"
-    assert controller.actions[0].value == "space"
+    assert controller.actions[0].kind == "left_click"
+    assert controller.actions[0].use_current_pointer is True
+    assert controller.actions[0].x is None
+    window.close()
+    controller.shutdown()
+
+
+def test_inspector_tracks_the_selected_action_after_deletion():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    controller.addAction({"kind": "key", "value": "a"})
+    controller.addAction({"kind": "key", "value": "b"})
+    QTest.qWait(40)
+    assert window.property("editorIndex") == 1
+
+    controller.deleteAction(1)
+    QTest.qWait(40)
+    assert controller.selectedIndex == 0
+    assert window.property("editorIndex") == 0
+
+    window.close()
+    controller.shutdown()
+
+
+def test_record_pointer_button_arms_a_frozen_picker_until_a_point_is_clicked(monkeypatch):
+    monkeypatch.setattr(qt_controller.pyautogui, "position", lambda: SimpleNamespace(x=700, y=420))
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    picker = window.findChild(QQuickItem, "actionTypePicker")
+    button = window.findChild(QQuickItem, "recordPointerPosition")
+    assert picker is not None and button is not None
+
+    picker.setProperty("currentIndex", 3)
+    _app.processEvents()
+    QMetaObject.invokeMethod(button, "click", Qt.DirectConnection)
+    QTest.qWait(30)
+    assert controller.capturePending is True
+    assert controller.captureCountdown == 0
+    assert button.property("text") == "Cancel point picker"
+
+    assert controller.commitPositionCapture(700, 420) is True
+    QTest.qWait(30)
+    assert controller.capturePending is False
+    assert button.property("text") == "Pick pointer position"
+    window.close()
+    controller.shutdown()
+
+
+def test_start_button_discloses_when_visible_run_settings_will_be_applied():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    start = window.findChild(QQuickItem, "runStartButton")
+    assert start is not None
+    controller.addAction({"kind": "key", "value": "space"})
+    controller.markRunSettingsPending()
+    QTest.qWait(40)
+    assert start.property("text") == "Apply & start"
+    window.close()
+    controller.shutdown()
+
+
+def test_background_mode_requires_a_selected_target_and_keeps_desktop_available():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
+    desktop_mode = window.findChild(QQuickItem, "desktopTargetModeButton")
+    pick_window = window.findChild(QQuickItem, "pickWindowButton")
+    start = window.findChild(QQuickItem, "runStartButton")
+    assert all(item is not None for item in (background_mode, desktop_mode, pick_window, start))
+    controller.addAction({"kind": "key", "value": "space"})
+    window.setProperty("activeInspectorTab", 1)
+
+    QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
+    QTest.qWait(40)
+    assert controller.targetSettings["mode"] == "window"
+    assert pick_window.isVisible() is True
+    assert start.isEnabled() is False
+
+    desktop_choice = window.findChild(QQuickItem, "desktopWindowChoice")
+    assert desktop_choice is not None
+    QMetaObject.invokeMethod(desktop_choice, "click", Qt.DirectConnection)
+    QTest.qWait(40)
+    assert controller.targetSettings["mode"] == "desktop"
+    assert start.isEnabled() is True
+    window.close()
+    controller.shutdown()
+
+
+def test_window_picker_shows_desktop_and_open_app_choices():
+    service = PickerWindowService()
+    engine, controller = build_engine(start_hotkeys=False, window_service=service)
+    window = engine.rootObjects()[0]
+    window.setWidth(1240)
+    window.setHeight(760)
+    window.setProperty("activeInspectorTab", 1)
+    background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
+    dialog = window.findChild(QObject, "windowPickerDialog")
+    assert background_mode is not None and dialog is not None
+
+    QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
+    QTest.qWait(100)
+
+    desktop = window.findChild(QQuickItem, "desktopWindowChoice")
+    choices = visual_children_named(window.contentItem(), "windowChoice_")
+    assert dialog.property("opened") is True
+    assert desktop is not None
+    assert len(choices) == 2
+    assert [entry["appName"] for entry in controller.windowEntries] == ["Discord", "Google Chrome"]
+
+    second = next(item for item in choices if item.objectName() == "windowChoice_1")
+    QMetaObject.invokeMethod(second, "click", Qt.DirectConnection)
+    QTest.qWait(220)
+    assert controller.targetSettings["displayName"] == "Daily meeting - Google Meet"
+    assert dialog.property("opened") is False
     window.close()
     controller.shutdown()
 

@@ -3,6 +3,7 @@ from pathlib import Path
 
 QML = (Path(__file__).parents[1] / "qml" / "Main.qml").read_text(encoding="utf-8")
 QT_APP = (Path(__file__).parents[1] / "qt_app.py").read_text(encoding="utf-8")
+CAPTURE_OVERLAY = (Path(__file__).parents[1] / "capture_overlay.py").read_text(encoding="utf-8")
 
 
 def test_brand_uses_packaged_logo_instead_of_placeholder_monogram():
@@ -23,7 +24,7 @@ def test_sequence_identity_and_selection_are_visible():
     assert 'objectName: "stepBadge"' in QML
     assert 'objectName: "sequenceConnector"' in QML
     assert 'text: String(actionCard.actionIndex + 1).padStart(2, "0")' in QML
-    assert 'text: "EDITING"' in QML
+    assert '? "RUNNING" : "EDITING"' in QML
 
 
 def test_sequence_rows_use_numbered_blue_workflow_steps():
@@ -100,4 +101,82 @@ def test_compact_shortcut_dock_and_run_controls_have_stable_visual_contracts():
     assert 'objectName: "runStartButton"' in QML
     assert 'keyHint: controller.runSettings.startHotkey' in QML
     assert 'keyHint: controller.runSettings.stopHotkey' in QML
-    assert "enabled: !controller.running && controller.canRun" in QML
+    assert "enabled: !controller.running && controller.canRun &&" in QML
+
+
+def test_pointer_recording_uses_a_cancellable_frozen_screen_picker():
+    assert 'objectName: "recordPointerPosition"' in QML
+    assert 'text: "Capture current pointer"' not in QML
+    assert "controller.startPositionCapture(0)" in QML
+    assert "freezes and dims the screen" in QML
+    assert 'sequence: "Esc"' in QML
+    assert 'self.setObjectName("positionCaptureOverlay")' in CAPTURE_OVERLAY
+    assert "screen.grabWindow(0)" in CAPTURE_OVERLAY
+    assert "Click to record" in CAPTURE_OVERLAY
+
+
+def test_click_actions_offer_live_pointer_targeting():
+    assert 'objectName: "followPointerSwitch"' in QML
+    assert 'text: "Follow current pointer"' in QML
+    assert "useCurrentPointer: clickAction && followPointerSwitch.checked && desktopTarget" in QML
+
+
+def test_safe_editing_controls_cover_recovery_undo_and_targeted_runs():
+    assert 'objectName: "recoveryDialog"' in QML
+    assert 'objectName: "recoveryDiscardButton"' in QML
+    assert 'objectName: "recoveryAcceptButton"' in QML
+    assert 'Layout.preferredWidth: 104' in QML
+    assert 'Layout.preferredWidth: 164' in QML
+    assert 'objectName: "unsavedChangesDialog"' in QML
+    assert 'objectName: "unsavedCancelButton"' in QML
+    assert 'objectName: "unsavedDiscardButton"' in QML
+    assert 'objectName: "unsavedSaveButton"' in QML
+    assert "Layout.preferredWidth: 168" in QML
+    assert 'objectName: "undoDeleteButton"' in QML
+    assert 'objectName: "testActionButton"' in QML
+    assert 'objectName: "runFromHereButton"' in QML
+    assert "controller.startRunWithSettings(runForm.payload())" in QML
+
+
+def test_in_app_profile_library_supports_switching_and_folder_management():
+    assert 'objectName: "profileLibraryDrawer"' in QML
+    assert 'objectName: "profileLibraryList"' in QML
+    assert 'objectName: "profileLibraryEmptyState"' in QML
+    assert 'objectName: "chooseProfileFolderButton"' in QML
+    assert 'objectName: "profileLibrarySaveAsButton"' in QML
+    assert 'objectName: "profileLibraryOpenFileButton"' in QML
+    assert "model: controller.profileEntries" in QML
+    assert "modelData.path === controller.currentProfilePath" in QML
+    assert "root.requestProfileOpen(modelData.path)" in QML
+    assert 'sequence: "Ctrl+O"' in QML
+    assert 'sequence: "Ctrl+Shift+S"' in QML
+
+
+def test_sequence_actions_support_pointer_dragging_and_button_reordering():
+    assert 'objectName: "actionDragHandle_" + actionCard.actionIndex' in QML
+    assert 'objectName: "sequenceDropIndicator_" + actionCard.actionIndex' in QML
+    assert "DragHandler" in QML
+    assert "root.beginSequenceDrag(actionCard.actionIndex)" in QML
+    assert "root.updateSequenceDrag(actionCard.actionIndex, translation.y)" in QML
+    assert "controller.moveActionTo(index, target)" in QML
+    assert "controller.moveAction(controller.selectedIndex, -1)" in QML
+    assert "controller.moveAction(controller.selectedIndex, 1)" in QML
+    assert "visible: actionCard.actionIndex < actionList.count - 1" in QML
+
+
+def test_background_window_targeting_discloses_picker_and_compatibility_limits():
+    assert 'objectName: "desktopTargetModeButton"' in QML
+    assert 'objectName: "windowTargetModeButton"' in QML
+    assert 'objectName: "pickWindowButton"' in QML
+    assert 'objectName: "windowPickerDialog"' in QML
+    assert 'objectName: "desktopWindowChoice"' in QML
+    assert 'objectName: "windowChoice_" + index' in QML
+    assert 'controller.setTargetMode("window")' in QML
+    assert "controller.startWindowPick()" in QML
+    assert "controller.selectWindowTarget(modelData.handle)" in QML
+    assert "Your pointer remains free" in QML
+    assert "coordinateSpace: coordinateSpace" in QML
+    assert "referenceWidth: referenceWidth" in QML
+    assert "referenceHeight: referenceHeight" in QML
+    assert "referenceWidth2: referenceWidth2" in QML
+    assert "referenceHeight2: referenceHeight2" in QML

@@ -22,9 +22,17 @@ def install_fonts() -> None:
         QFontDatabase.addApplicationFont(str(root / name))
 
 
-def build_engine(start_hotkeys: bool = True) -> tuple[QQmlApplicationEngine, AutomatorController]:
+def build_engine(
+    start_hotkeys: bool = True,
+    profile_directory: str | Path | None = None,
+    window_service=None,
+) -> tuple[QQmlApplicationEngine, AutomatorController]:
     install_fonts()
-    controller = AutomatorController(start_hotkeys=start_hotkeys)
+    controller = AutomatorController(
+        start_hotkeys=start_hotkeys,
+        profile_directory=profile_directory,
+        window_service=window_service,
+    )
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("controller", controller)
     qml_path = resource_root() / "qml" / "Main.qml"

@@ -35,8 +35,8 @@ class AutomationBackend(Protocol):
     def press(self, key: str) -> None: ...
     def hotkey(self, *keys: str) -> None: ...
     def write(self, text: str, interval: float = 0.0, _pause: bool = True) -> None: ...
-    def click(self, x: int, y: int, button: str = "left") -> None: ...
-    def doubleClick(self, x: int, y: int, button: str = "left") -> None: ...
+    def click(self, x: int | None = None, y: int | None = None, button: str = "left") -> None: ...
+    def doubleClick(self, x: int | None = None, y: int | None = None, button: str = "left") -> None: ...
     def moveTo(self, x: int, y: int, _pause: bool = True) -> None: ...
     def dragTo(self, x: int, y: int, duration: float = 0.0, button: str = "left") -> None: ...
     def scroll(self, amount: int) -> None: ...
@@ -81,6 +81,12 @@ class Action:
     repeats: int = 1
     delay_after: float = 0.1
     enabled: bool = True
+    use_current_pointer: bool = False
+    coordinate_space: str = "screen"
+    reference_width: int = 0
+    reference_height: int = 0
+    reference_width2: int = 0
+    reference_height2: int = 0
 
     def validate(self, reserved_keys: set[str] | None = None) -> None:
         if self.kind not in VALID_ACTIONS:
@@ -100,7 +106,22 @@ class Action:
                 raise ValueError(f"{names} is reserved by the app's global controls and cannot be an action.")
         if self.kind == "text" and len(self.value) > 10_000:
             raise ValueError("Text actions are limited to 10,000 characters.")
-        if self.kind in {"left_click", "right_click", "double_click", "middle_click", "scroll", "drag"}:
+        click_actions = {"left_click", "right_click", "double_click", "middle_click"}
+        if self.coordinate_space not in {"screen", "window"}:
+            raise ValueError("Mouse coordinate space must be screen or window.")
+        if self.use_current_pointer and self.kind not in click_actions:
+            raise ValueError("Follow current pointer is available only for click actions.")
+        if self.use_current_pointer and self.coordinate_space != "screen":
+            raise ValueError("Follow current pointer is available only for Desktop actions.")
+        if self.reference_width < 0 or self.reference_height < 0:
+            raise ValueError("Recorded window size cannot be negative.")
+        if bool(self.reference_width) != bool(self.reference_height):
+            raise ValueError("Recorded window size needs both width and height.")
+        if self.reference_width2 < 0 or self.reference_height2 < 0:
+            raise ValueError("Recorded destination window size cannot be negative.")
+        if bool(self.reference_width2) != bool(self.reference_height2):
+            raise ValueError("Recorded destination window size needs both width and height.")
+        if self.kind in {"scroll", "drag"} or (self.kind in click_actions and not self.use_current_pointer):
             if self.x is None or self.y is None or self.x < 0 or self.y < 0:
                 raise ValueError("Mouse actions need a recorded non-negative X/Y position.")
         if self.kind == "scroll" and self.amount == 0:
@@ -129,7 +150,7 @@ class Action:
         elif self.kind == "scroll":
             target = f"{self.amount:+d} at ({self.x}, {self.y})"
         elif self.kind in {"left_click", "right_click", "double_click", "middle_click"}:
-            target = f"({self.x}, {self.y})"
+            target = "current pointer" if self.use_current_pointer else f"({self.x}, {self.y})"
         else:
             target = self.value.replace("\n", "\\n")
             if len(target) > 36:
@@ -149,8 +170,14 @@ class RunSettings:
     start_hotkey: str = "f6"
     capture_hotkey: str = "f8"
     stop_hotkey: str = "f9"
+    target_mode: str = "desktop"
+    target_window_title: str = ""
+    target_window_class: str = ""
+    target_executable: str = ""
 
     def validate(self) -> None:
+        if self.target_mode not in {"desktop", "window"}:
+            raise ValueError("Target mode must be Desktop or Background window.")
         if not self.repeat_forever and not 1 <= self.repeat_count <= 1_000_000:
             raise ValueError("Repeat count must be from 1 to 1,000,000.")
         hotkeys = {
@@ -205,6 +232,18 @@ class AutomationRunner:
                 raise
             raw_release(x, y, "left")
 
+    def _point_for_action(self, action: Action, destination: bool = False) -> tuple[int, int]:
+        x = action.x2 if destination else action.x
+        y = action.y2 if destination else action.y
+        if x is None or y is None:
+            raise ValueError("Mouse actions need a recorded X/Y position.")
+        scaler = getattr(self.backend, "scale_point", None)
+        if action.coordinate_space == "window" and callable(scaler):
+            reference_width = action.reference_width2 if destination and action.reference_width2 else action.reference_width
+            reference_height = action.reference_height2 if destination and action.reference_height2 else action.reference_height
+            return scaler(x, y, reference_width, reference_height)
+        return int(x), int(y)
+
     def execute_action(self, action: Action, text_key_interval: float, reserved_keys: set[str] | None = None) -> None:
         action.validate(reserved_keys)
         if action.kind == "key":
@@ -217,19 +256,23 @@ class AutomationRunner:
         elif action.kind == "text":
             self.backend.write(action.value, interval=text_key_interval)
         elif action.kind == "left_click":
-            self.backend.click(action.x, action.y, button="left")
+            point = (None, None) if action.use_current_pointer else self._point_for_action(action)
+            self.backend.click(*point, button="left")
         elif action.kind == "right_click":
-            self.backend.click(action.x, action.y, button="right")
+            point = (None, None) if action.use_current_pointer else self._point_for_action(action)
+            self.backend.click(*point, button="right")
         elif action.kind == "double_click":
-            self.backend.doubleClick(action.x, action.y, button="left")
+            point = (None, None) if action.use_current_pointer else self._point_for_action(action)
+            self.backend.doubleClick(*point, button="left")
         elif action.kind == "middle_click":
-            self.backend.click(action.x, action.y, button="middle")
+            point = (None, None) if action.use_current_pointer else self._point_for_action(action)
+            self.backend.click(*point, button="middle")
         elif action.kind == "scroll":
-            self.backend.moveTo(action.x, action.y)
+            self.backend.moveTo(*self._point_for_action(action))
             self.backend.scroll(action.amount)
         elif action.kind == "drag":
-            self.backend.moveTo(action.x, action.y)
-            self.backend.dragTo(action.x2, action.y2, duration=action.duration, button="left")
+            self.backend.moveTo(*self._point_for_action(action))
+            self.backend.dragTo(*self._point_for_action(action, destination=True), duration=action.duration, button="left")
 
     def _execute_interruptibly(
         self,
@@ -251,7 +294,9 @@ class AutomationRunner:
 
         if action.kind == "drag":
             action.validate(reserved_keys)
-            self.backend.moveTo(action.x, action.y, _pause=False)
+            start_x, start_y = self._point_for_action(action)
+            end_x, end_y = self._point_for_action(action, destination=True)
+            self.backend.moveTo(start_x, start_y, _pause=False)
             self.backend.mouseDown(button="left", _pause=False)
             try:
                 steps = max(1, math.ceil(action.duration / 0.02))
@@ -259,14 +304,14 @@ class AutomationRunner:
                 for step in range(1, steps + 1):
                     if stop_event.is_set():
                         return False
-                    x = round(action.x + (action.x2 - action.x) * step / steps)
-                    y = round(action.y + (action.y2 - action.y) * step / steps)
+                    x = round(start_x + (end_x - start_x) * step / steps)
+                    y = round(start_y + (end_y - start_y) * step / steps)
                     self.backend.moveTo(x, y, _pause=False)
                     if not interruptible_sleep(step_delay, stop_event):
                         return False
                 return True
             finally:
-                self._release_drag_mouse(action.x2, action.y2)
+                self._release_drag_mouse(end_x, end_y)
 
         self.execute_action(action, text_key_interval, reserved_keys)
         return not stop_event.is_set()
@@ -300,9 +345,11 @@ class AutomationRunner:
             cycle += 1
             if progress:
                 progress("running", cycle, total_cycles)
-            for action in actions:
+            for action_index, action in enumerate(actions):
                 if not action.enabled:
                     continue
+                if progress:
+                    progress("action", action_index, len(actions))
                 for _ in range(action.repeats):
                     if stop_event.is_set():
                         return False

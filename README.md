@@ -11,12 +11,13 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#profiles">Profiles</a> ·
   <a href="#controls-and-safety">Controls</a> ·
   <a href="#run-from-source">Run from source</a> ·
   <a href="#build-a-release">Build a release</a>
 </p>
 
-> Current release: **3.0.8** · Windows 10/11 · 64-bit
+> Current release: **3.4.0** · Windows 10/11 · 64-bit
 
 ## Why KeyClick
 
@@ -26,6 +27,11 @@ and stop the automation immediately whenever you need to.
 
 - Keyboard presses, shortcuts, and typed text
 - Left, right, double, and middle mouse clicks
+- Click at a saved position or wherever the pointer is currently moving
+- Send actions to one background window while your physical mouse stays free
+- Choose Desktop or an open app from a visual window picker
+- Record precise points on a frozen, dimmed copy of the screen
+- Keep window-relative pointer positions aligned when the target is resized
 - Scrolling and pointer dragging
 - Per-action repeats and delays
 - Finite runs or continuous looping
@@ -37,8 +43,8 @@ and stop the automation immediately whenever you need to.
 
 | Build | Best for | What you need |
 | --- | --- | --- |
-| `KeyClickAutomator-Portable-3.0.8.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
-| `KeyClickAutomator-Setup-3.0.8.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
+| `KeyClickAutomator-Portable-3.4.0.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
+| `KeyClickAutomator-Setup-3.4.0.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
 
 Both builds are created in the `release` folder. The portable build is one
 standalone file. The setup download is smaller because it installs the bundled
@@ -50,12 +56,22 @@ runtime as a normal application folder.
 ## Quick start
 
 1. Open KeyClick Automator.
-2. Select **Create first action** or **New action**.
-3. Choose an action type, enter its details, and select **Add to sequence**.
-4. Add more actions in the order they should run.
-5. Select a sequence card to edit it. Use its switch to skip or restore that step.
-6. Select **Start** or press `F6`.
-7. Press `F9` at any time for an emergency stop.
+2. Select **Profiles** or press `Ctrl+O` to switch to a saved sequence without
+   leaving KeyClick. To start fresh, select **Create first action** or **New action**.
+3. In the **Run** inspector, keep **Desktop** for normal automation or choose
+   **Background window**. The visual picker shows Desktop and the open apps on
+   your computer; select the exact window you want to automate.
+4. Choose an action type and enter its details.
+5. For a fixed mouse target, select **Pick pointer position**. KeyClick hides,
+   freezes, and dims the current desktop; click the exact point without rushing,
+   or press `Esc` to cancel. For clicks that should follow your hand, enable
+   **Follow current pointer** instead in Desktop mode.
+6. Select **Add to sequence**, then add more actions in the order they should run.
+7. Drag a card by its six-dot grip to reorder it; the numbered timeline stays in
+   place while only the card follows the pointer. You can also use **Up** or
+   **Down**. Select any card to edit, test, duplicate, or disable it.
+8. Select **Start**. Any visible Run changes are validated and applied first.
+9. Press `F9` at any time for an emergency stop.
 
 Example sequence:
 
@@ -77,46 +93,111 @@ step can be turned back on.
 | Pointer | Left click, right click, double click, middle click |
 | Movement | Scroll, drag pointer |
 
-Every action can be edited, enabled or disabled, repeated, delayed, reordered,
-duplicated, and deleted.
+Every action can be edited, enabled or disabled, repeated, delayed, reordered by
+dragging its grip or using **Up**/**Down**, duplicated, and deleted.
+
+### Click while moving the pointer
+
+For **Left click**, **Right click**, **Double click**, or **Middle click**, enable
+**Follow current pointer**. KeyClick then clicks wherever the pointer is at that
+moment and does not move it to saved coordinates, so you can keep moving the
+mouse while repeated clicks run. Leave the option off when every click must land
+at one fixed screen position.
+
+Scroll and drag actions continue to use recorded positions because those actions
+need a defined target or path.
+
+### Automate one window in the background
+
+In the **Run** inspector, choose **Background window**. A visual picker lists the
+Desktop and usable open windows, including browser meetings, Discord, Zoom, and
+other apps. Select a preview to make that exact window the target. Use **Refresh**
+after opening or restoring another app.
+
+Record mouse positions again in this mode so they are saved relative to that
+window instead of the desktop. KeyClick also records the window's content size.
+When the target is resized later, each click, scroll point, and drag endpoint is
+scaled to the new size before the action is delivered.
+
+While the sequence runs, KeyClick sends keyboard and mouse messages only to the
+selected window. It can stay behind other windows and your physical pointer does
+not move, so you can keep using the mouse elsewhere. Keep the target open,
+restored, and at the same privilege level as KeyClick.
+
+Background delivery works best with standard Windows controls. Some games,
+raw-input applications, elevated programs, and modern or custom-rendered controls
+may ignore message-based input. If an app does not respond, switch back to
+**Desktop** mode. KeyClick blocks desktop-relative actions from running in window
+mode (and vice versa) until their positions are recorded for the selected target.
 
 ## Controls and safety
 
 | Default key | Action |
 | --- | --- |
 | `F6` | Start or toggle the current run |
-| `F8` | Capture the current pointer position |
+| `F8` | Open the frozen-screen pointer picker |
 | `F9` | Stop immediately |
 
 The shortcuts can be recorded and changed in the **Run** inspector. On laptops,
-you may need to hold `Fn` to send an F-key. KeyClick also keeps PyAutoGUI's corner
-fail-safe active: moving the pointer into a screen corner can stop automation.
+you may need to hold `Fn` to send an F-key. In Desktop mode, KeyClick also keeps
+PyAutoGUI's corner fail-safe active: moving the pointer into a screen corner can
+stop automation. Background window mode leaves the physical pointer untouched;
+use `F9` to stop it.
 
-Before a long or repeating run, test the sequence with a small cycle count and
-make sure `F9` works with your keyboard.
+Use **Test once** to try the selected step after a three-second safety countdown,
+or **Run from here** to start at the selected step. The active sequence card is
+highlighted while automation runs. Before a long or repeating run, make sure
+`F9` works with your keyboard.
 
 ## Profiles
 
-- **Save profile** stores the sequence and run settings in a `.kca.json` file.
-- **Open profile** restores a saved sequence.
-- Profiles remain compatible with the 3.x interface.
+- **Profiles** (`Ctrl+O`) opens an in-app library of `.kca.json` profiles in the
+  current profile folder. Select any row to switch sequences immediately.
+- The portable build starts with the folder beside its `.exe`, so profiles saved
+  beside KeyClick appear automatically. **Change** can point the library elsewhere.
+- Each row shows its action count and modified time; the loaded profile is marked
+  **Current**, and unreadable KeyClick files are clearly unavailable.
+- Unsaved edits still trigger **Save**, **Discard**, or **Cancel** before switching.
+- `Ctrl+S` saves directly to the active profile. Use `Ctrl+Shift+S` or **Save as…**
+  to create another profile, which also becomes the library's current folder.
+- **Open file…** can load a profile from another folder; the library then follows
+  that folder and lists its other profiles.
+- The selected target mode, window identity, coordinate type, and responsive
+  window-size references are saved too.
+- Unsaved edits are protected by a confirmation dialog and an automatic recovery
+  copy if the app or computer closes unexpectedly.
+- A deleted action can be restored with **Undo** or `Ctrl+Z`.
+- Profiles created by earlier 3.x releases remain compatible.
 
-## What's new in 3.0.8
+## What's new in 3.4.0
 
-- Redesigned sequence cards as a numbered blue workflow
-- Smooth, interruptible on/off animation for each action
-- Action switches remain usable after a step is disabled
-- Cleaner hover, pressed, and editing states without dark flashes
-- Correctly aligned action-type dropdown
-- Compact, fixed-size F-key shortcut dock
-- Better balanced Start and Stop controls
-- Smaller portable and setup packages
-- Transparent app logo with a cleaner navigation rail
+- A visual target picker shows Desktop and open app windows with previews, names,
+  selected state, refresh, and clear handling for minimized windows
+- Pointer recording now hides KeyClick and opens a frozen, dimmed desktop overlay;
+  click once to choose the exact point, or press `Esc` to cancel
+- Background-window mouse positions store their reference content size and scale
+  clicks, scrolling, and both drag endpoints whenever the target is resized
+- Drag-to-reorder now moves only the action card while the numbered timeline and
+  connector remain anchored in place
+- The unsaved-changes dialog now uses contained, balanced Cancel, Discard, and
+  Save actions that stay inside the modal at the minimum window size
+
+### Previous release: 3.3.0
+
+- The in-app **Profiles** drawer lists saved sequences beside the portable app
+- Profiles open with one click while unsaved edits remain protected
+- Current-profile highlighting, action counts, modified times, invalid-file states,
+  folder switching, and direct `Ctrl+S` saves make profiles easier to manage
 
 ## Release history
 
 | Version | Summary |
 | --- | --- |
+| 3.4.0 | Visual window picker, frozen point capture, and resize-aware window positions |
+| 3.3.0 | In-app profile library with safe one-click switching and folder discovery |
+| 3.2.1 | Drag-to-reorder sequence cards and corrected recovery-dialog actions |
+| 3.2.0 | Background-window targeting with window-relative mouse actions and a free physical pointer |
+| 3.1.0 | Moving-pointer clicks, delayed position recording, safer testing, undo, and draft recovery |
 | 3.0.8 | Workflow-card redesign, compact controls, packaging reduction, and animated action toggles |
 | 3.0.7 | Neutral navigation hover treatment |
 | 3.0.6 | Safe recording for all global shortcuts |
@@ -149,8 +230,10 @@ No installation step is needed after the dependencies finish installing.
 ```
 
 The suite covers the automation engine, cancellation and timing, profile files,
-controller behavior, responsive breakpoints, QML loading, interaction states,
-and release-version consistency.
+controller behavior, frozen pointer recording, visual window discovery,
+resize-aware background coordinates, background-window delivery and follow mode,
+draft recovery, card-only drag reordering, modal containment, responsive breakpoints,
+QML loading, interaction states, and release-version consistency.
 
 ## Build a release
 
@@ -159,7 +242,7 @@ Build the single-file portable app:
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller --clean --noconfirm KeyClickAutomator.spec
 New-Item -ItemType Directory -Force release | Out-Null
-Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.0.8.exe
+Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.0.exe
 ```
 
 Build the installer payload, then compile it with Inno Setup 6:
@@ -181,6 +264,8 @@ Before publishing, complete every check in [RELEASING.md](RELEASING.md).
 | `qml/Main.qml` | Desktop interface and animations |
 | `qt_controller.py` | UI model, profile actions, and run coordination |
 | `engine.py` | Automation actions, validation, timing, and execution |
+| `window_backend.py` | Windows target discovery and background message delivery |
+| `capture_overlay.py` | Frozen, dimmed multi-monitor pointer picker |
 | `tests/` | Controller, engine, QML, responsive, and release tests |
 | `KeyClickAutomator.spec` | Single-file portable build |
 | `KeyClickAutomatorInstaller.spec` | Multi-file installer payload |

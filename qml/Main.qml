@@ -22,6 +22,11 @@ ApplicationWindow {
     property int activeInspectorTab: 0
     property int editorIndex: -1
     property string shortcutRecordingTarget: ""
+    property string pendingDestructiveAction: ""
+    property string pendingProfilePath: ""
+    property bool closeConfirmed: false
+    property int draggedActionIndex: -1
+    property int dragTargetIndex: -1
 
     readonly property color ink: "#171A21"
     readonly property color ink2: "#4B5363"
@@ -47,9 +52,154 @@ ApplicationWindow {
     font.family: interRegular.name || "Segoe UI"
 
     Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-    Component.onCompleted: opacity = 1
+    Component.onCompleted: {
+        opacity = 1
+        if (controller.draftAvailable)
+            Qt.callLater(function() { recoveryDialog.open() })
+    }
     onOverlayInspectorChanged: inspectorOpen = !overlayInspector
-    onClosing: controller.shutdown()
+    onClosing: function(close) {
+        if (controller.recoveryEnabled && !root.closeConfirmed && (controller.dirty || controller.runSettingsPending)) {
+            close.accepted = false
+            root.pendingDestructiveAction = "close"
+            unsavedDialog.open()
+        } else {
+            controller.shutdown()
+        }
+    }
+
+    function beginNewAction() {
+        if (controller.capturePending)
+            controller.cancelPositionCapture()
+        if (controller.windowPickPending)
+            controller.cancelWindowPick()
+        controller.selectedIndex = -1
+        root.editorIndex = -1
+        root.activeInspectorTab = 0
+        root.inspectorOpen = true
+        editor.reset()
+        Qt.callLater(function() { actionType.forceActiveFocus() })
+    }
+
+    function saveProfileWithVisibleSettings() {
+        if (controller.runSettingsPending && !runForm.apply()) {
+            root.activeInspectorTab = 1
+            root.inspectorOpen = true
+            return false
+        }
+        return controller.saveProfile()
+    }
+
+    function saveProfileAsWithVisibleSettings() {
+        if (controller.runSettingsPending && !runForm.apply()) {
+            root.activeInspectorTab = 1
+            root.inspectorOpen = true
+            return false
+        }
+        return controller.saveProfileAs()
+    }
+
+    function performDestructiveAction(action) {
+        if (action === "new") {
+            controller.clearActions()
+            root.beginNewAction()
+        } else if (action === "open") {
+            if (controller.openProfile())
+                profileDrawer.close()
+        } else if (action === "profile") {
+            var profilePath = root.pendingProfilePath
+            root.pendingProfilePath = ""
+            if (controller.openProfilePath(profilePath))
+                profileDrawer.close()
+        } else if (action === "close") {
+            controller.discardDraft()
+            root.closeConfirmed = true
+            root.close()
+        }
+    }
+
+    function requestDestructiveAction(action) {
+        if (action !== "profile")
+            root.pendingProfilePath = ""
+        if (controller.capturePending)
+            controller.cancelPositionCapture()
+        if (controller.windowPickPending)
+            controller.cancelWindowPick()
+        if (controller.dirty || controller.runSettingsPending) {
+            root.pendingDestructiveAction = action
+            unsavedDialog.open()
+        } else {
+            root.performDestructiveAction(action)
+        }
+    }
+
+    function requestProfileOpen(path) {
+        root.pendingProfilePath = path
+        root.requestDestructiveAction("profile")
+    }
+
+    function openWindowPicker() {
+        if (controller.running)
+            return
+        controller.startWindowPick()
+        windowPickerDialog.open()
+    }
+
+    function closeWindowPicker() {
+        windowPickerDialog.close()
+    }
+
+    function beginSequenceDrag(index) {
+        draggedActionIndex = index
+        dragTargetIndex = index
+        controller.selectedIndex = index
+    }
+
+    function updateSequenceDrag(index, offsetY) {
+        if (draggedActionIndex !== index || actionList.count < 2)
+            return
+        var rowSpan = 76 + actionList.spacing
+        dragTargetIndex = Math.max(
+            0,
+            Math.min(actionList.count - 1, index + Math.round(offsetY / rowSpan))
+        )
+    }
+
+    function finishSequenceDrag(index) {
+        if (draggedActionIndex !== index)
+            return
+        var target = dragTargetIndex
+        draggedActionIndex = -1
+        dragTargetIndex = -1
+        if (target >= 0 && target !== index)
+            controller.moveActionTo(index, target)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Z"
+        enabled: controller.canUndo && !controller.running
+        onActivated: controller.undoDelete()
+    }
+    Shortcut {
+        sequence: "Ctrl+S"
+        enabled: !controller.running
+        onActivated: root.saveProfileWithVisibleSettings()
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+S"
+        enabled: !controller.running
+        onActivated: root.saveProfileAsWithVisibleSettings()
+    }
+    Shortcut {
+        sequence: "Ctrl+O"
+        enabled: !controller.running
+        onActivated: profileDrawer.open()
+    }
+    Shortcut {
+        sequence: "Esc"
+        enabled: controller.capturePending
+        onActivated: controller.cancelPositionCapture()
+    }
 
     function toneColor(tone) {
         if (tone === "accent") return primary
@@ -307,12 +457,14 @@ ApplicationWindow {
                     objectName: "workspaceNav_open"
                     Layout.fillWidth: true
                     implicitHeight: 42
-                    text: root.compactNav ? "" : "Open profile"
-                    leading: "↗"
+                    text: root.compactNav ? "" : "Profiles"
+                    leading: "≡"
                     quiet: true
                     ToolTip.visible: pointerHover && root.compactNav
-                    ToolTip.text: "Open profile"
-                    onClicked: controller.openProfile()
+                    ToolTip.text: "Profiles (Ctrl+O)"
+                    Accessible.name: "Profiles"
+                    Accessible.description: "Open the saved profile library"
+                    onClicked: profileDrawer.open()
                 }
                 KButton {
                     objectName: "workspaceNav_save"
@@ -323,7 +475,7 @@ ApplicationWindow {
                     quiet: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "Save profile"
-                    onClicked: controller.saveProfile()
+                    onClicked: root.saveProfileWithVisibleSettings()
                 }
                 KButton {
                     objectName: "workspaceNav_new"
@@ -334,7 +486,7 @@ ApplicationWindow {
                     quiet: true
                     ToolTip.visible: pointerHover && root.compactNav
                     ToolTip.text: "New sequence"
-                    onClicked: controller.clearActions()
+                    onClicked: root.requestDestructiveAction("new")
                 }
 
                 Item { Layout.fillHeight: true }
@@ -361,7 +513,7 @@ ApplicationWindow {
                         Repeater {
                             model: [
                                 {key: controller.runSettings.startHotkey, label: "Start"},
-                                {key: controller.runSettings.captureHotkey, label: "Capture"},
+                                {key: controller.runSettings.captureHotkey, label: root.compactNav ? "Record" : "Record pointer"},
                                 {key: controller.runSettings.stopHotkey, label: "Stop"}
                             ]
                             delegate: ShortcutHint {
@@ -377,7 +529,7 @@ ApplicationWindow {
                         Text {
                             visible: !root.compactNav
                             Layout.fillWidth: true
-                            text: "Corner fail-safe is always active."
+                            text: controller.targetSettings.mode === "window" ? "Background mode: F9 stops the run." : "Desktop corner fail-safe is active."
                             wrapMode: Text.WordWrap
                             color: root.ink3
                             font.family: interRegular.name || root.font.family
@@ -419,7 +571,7 @@ ApplicationWindow {
                             font.weight: Font.Bold
                         }
                         Text {
-                            text: controller.currentProfileName + "  ·  " + controller.summary
+                            text: controller.currentProfileName + (controller.dirty ? "  ·  Unsaved" : "") + "  ·  " + controller.summary
                             color: root.ink2
                             font.family: interRegular.name || root.font.family
                             font.pixelSize: 12
@@ -477,10 +629,46 @@ ApplicationWindow {
                             font.family: interSemiBold.name || root.font.family
                             font.pixelSize: 11
                         }
-                        KButton { visible: controller.selectedIndex >= 0 && workspace.width > 540; quiet: true; text: "Up"; leading: "↑"; implicitWidth: 66; onClicked: controller.moveAction(controller.selectedIndex, -1) }
-                        KButton { visible: controller.selectedIndex >= 0 && workspace.width > 610; quiet: true; text: "Down"; leading: "↓"; implicitWidth: 76; onClicked: controller.moveAction(controller.selectedIndex, 1) }
-                        KButton { visible: controller.selectedIndex >= 0; quiet: true; text: workspace.width > 680 ? "Duplicate" : ""; leading: "⧉"; implicitWidth: workspace.width > 680 ? 98 : 42; onClicked: controller.duplicateAction(controller.selectedIndex) }
-                        KButton { visible: controller.selectedIndex >= 0; danger: true; quiet: true; text: workspace.width > 680 ? "Delete" : ""; leading: "×"; implicitWidth: workspace.width > 680 ? 78 : 42; onClicked: controller.deleteAction(controller.selectedIndex) }
+                        KButton {
+                            objectName: "undoDeleteButton"
+                            visible: controller.canUndo
+                            enabled: !controller.running
+                            quiet: true
+                            text: workspace.width > 760 ? "Undo" : ""
+                            leading: "↶"
+                            implicitWidth: workspace.width > 760 ? 72 : 42
+                            ToolTip.visible: pointerHover
+                            ToolTip.text: "Restore deleted action (Ctrl+Z)"
+                            onClicked: controller.undoDelete()
+                        }
+                        KButton {
+                            objectName: "testActionButton"
+                            visible: controller.selectedIndex >= 0 && workspace.width > 500
+                            enabled: !controller.running
+                            quiet: true
+                            text: workspace.width > 800 ? "Test" : ""
+                            leading: "1×"
+                            implicitWidth: workspace.width > 800 ? 68 : 42
+                            ToolTip.visible: pointerHover
+                            ToolTip.text: "Test this action once after a safety countdown"
+                            onClicked: controller.testActionWithSettings(controller.selectedIndex, runForm.payload())
+                        }
+                        KButton {
+                            objectName: "runFromHereButton"
+                            visible: controller.selectedIndex >= 0 && workspace.width > 540
+                            enabled: !controller.running
+                            quiet: true
+                            text: workspace.width > 860 ? "From here" : ""
+                            leading: "▶"
+                            implicitWidth: workspace.width > 860 ? 104 : 42
+                            ToolTip.visible: pointerHover
+                            ToolTip.text: "Run from the selected action"
+                            onClicked: controller.startRunFromWithSettings(controller.selectedIndex, runForm.payload())
+                        }
+                        KButton { visible: controller.selectedIndex >= 0 && workspace.width > 610; enabled: !controller.running; quiet: true; text: "Up"; leading: "↑"; implicitWidth: 66; onClicked: controller.moveAction(controller.selectedIndex, -1) }
+                        KButton { visible: controller.selectedIndex >= 0 && workspace.width > 680; enabled: !controller.running; quiet: true; text: "Down"; leading: "↓"; implicitWidth: 76; onClicked: controller.moveAction(controller.selectedIndex, 1) }
+                        KButton { visible: controller.selectedIndex >= 0; enabled: !controller.running; quiet: true; text: workspace.width > 760 ? "Duplicate" : ""; leading: "⧉"; implicitWidth: workspace.width > 760 ? 98 : 42; onClicked: controller.duplicateAction(controller.selectedIndex) }
+                        KButton { visible: controller.selectedIndex >= 0; enabled: !controller.running; danger: true; quiet: true; text: workspace.width > 760 ? "Delete" : ""; leading: "×"; implicitWidth: workspace.width > 760 ? 78 : 42; onClicked: controller.deleteAction(controller.selectedIndex) }
                     }
                 }
 
@@ -521,15 +709,10 @@ ApplicationWindow {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: "Create first action"
                             leading: "+"
-                            primary: true
-                            implicitWidth: 164
-                            onClicked: {
-                                root.activeInspectorTab = 0
-                                root.inspectorOpen = true
-                                controller.addAction(editor.payload())
-                                editor.reset()
-                            }
-                        }
+                             primary: true
+                             implicitWidth: 164
+                             onClicked: root.beginNewAction()
+                         }
                     }
 
                     ListView {
@@ -543,6 +726,12 @@ ApplicationWindow {
                         model: controller.actionModel
                         boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        move: Transition {
+                            NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
+                        }
+                        moveDisplaced: Transition {
+                            NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
+                        }
                         delegate: Rectangle {
                             id: actionCard
                             objectName: "actionCard"
@@ -555,7 +744,31 @@ ApplicationWindow {
                             height: 76
                             color: "transparent"
                             border.width: 0
+                            z: reorderDrag.active ? 20 : 0
                             HoverHandler { id: hover }
+
+                            Rectangle {
+                                id: dropIndicator
+                                objectName: "sequenceDropIndicator_" + actionCard.actionIndex
+                                visible: root.draggedActionIndex >= 0
+                                      && root.draggedActionIndex !== actionCard.actionIndex
+                                      && root.dragTargetIndex === actionCard.actionIndex
+                                z: 30
+                                x: 46
+                                y: root.draggedActionIndex < actionCard.actionIndex ? actionCard.height - height : 0
+                                width: actionCard.width - x
+                                height: 3
+                                radius: 2
+                                color: root.primary
+                                Rectangle {
+                                    width: 9
+                                    height: 9
+                                    radius: 5
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: root.primary
+                                }
+                            }
 
                             Rectangle {
                                 id: sequenceConnector
@@ -578,8 +791,8 @@ ApplicationWindow {
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 opacity: actionCard.actionEnabled ? 1 : 0.55
-                                color: controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? root.primarySoft : root.surface2
-                                border.width: controller.selectedIndex === actionCard.actionIndex ? 0 : 1
+                                color: controller.runningActionIndex === actionCard.actionIndex ? root.green : controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? root.primarySoft : root.surface2
+                                border.width: controller.runningActionIndex === actionCard.actionIndex || controller.selectedIndex === actionCard.actionIndex ? 0 : 1
                                 border.color: hover.hovered ? "#B8CCF5" : root.line
                                 Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -587,7 +800,7 @@ ApplicationWindow {
                                 Text {
                                     anchors.centerIn: parent
                                     text: String(actionCard.actionIndex + 1).padStart(2, "0")
-                                    color: controller.selectedIndex === actionCard.actionIndex ? "white" : root.primary
+                                    color: controller.runningActionIndex === actionCard.actionIndex || controller.selectedIndex === actionCard.actionIndex ? "white" : root.primary
                                     font.family: interSemiBold.name || root.font.family
                                     font.pixelSize: 10
                                     font.letterSpacing: 0.35
@@ -596,10 +809,11 @@ ApplicationWindow {
 
                             TapHandler {
                                 id: tap
+                                enabled: !controller.running
                                 onTapped: {
+                                    if (controller.capturePending)
+                                        controller.cancelPositionCapture()
                                     controller.selectedIndex = actionCard.actionIndex
-                                    root.editorIndex = actionCard.actionIndex
-                                    editor.loadAction(actionCard.actionIndex)
                                     root.activeInspectorTab = 0
                                     root.inspectorOpen = true
                                 }
@@ -614,11 +828,12 @@ ApplicationWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 height: 66
                                 radius: 14
-                                color: tap.pressed ? "#DEE9FF" : controller.selectedIndex === actionCard.actionIndex ? "#EDF3FF" : hover.hovered ? "#F4F7FF" : root.surface
+                                color: tap.pressed ? "#DEE9FF" : controller.runningActionIndex === actionCard.actionIndex ? root.successSoft : controller.selectedIndex === actionCard.actionIndex ? "#EDF3FF" : hover.hovered ? "#F4F7FF" : root.surface
                                 border.width: controller.selectedIndex === actionCard.actionIndex ? 2 : 1
-                                border.color: controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? "#B8CCF5" : root.line
-                                scale: tap.pressed ? 0.995 : 1
+                                border.color: reorderDrag.active ? root.primary : controller.runningActionIndex === actionCard.actionIndex ? root.green : controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? "#B8CCF5" : root.line
+                                scale: reorderDrag.active ? 1.015 : tap.pressed ? 0.995 : 1
                                 transformOrigin: Item.Center
+                                transform: Translate { y: reorderDrag.active ? reorderDrag.translation.y : 0 }
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Behavior on border.color { ColorAnimation { duration: 120 } }
                                 Behavior on scale { NumberAnimation { duration: 90 } }
@@ -668,15 +883,15 @@ ApplicationWindow {
                                                 }
                                                 Rectangle {
                                                     objectName: "editingBadge"
-                                                    visible: controller.selectedIndex === actionCard.actionIndex
+                                                    visible: controller.runningActionIndex === actionCard.actionIndex || controller.selectedIndex === actionCard.actionIndex
                                                     implicitWidth: editingLabel.implicitWidth + 14
                                                     implicitHeight: 20
                                                     radius: 7
-                                                    color: root.primary
+                                                    color: controller.runningActionIndex === actionCard.actionIndex ? root.green : root.primary
                                                     Text {
                                                         id: editingLabel
                                                         anchors.centerIn: parent
-                                                        text: "EDITING"
+                                                        text: controller.runningActionIndex === actionCard.actionIndex ? "RUNNING" : "EDITING"
                                                         color: "white"
                                                         font.family: interSemiBold.name || root.font.family
                                                         font.pixelSize: 8
@@ -695,11 +910,64 @@ ApplicationWindow {
                                         }
                                     }
 
+                                    Rectangle {
+                                        id: actionDragHandle
+                                        objectName: "actionDragHandle_" + actionCard.actionIndex
+                                        Layout.preferredWidth: 32
+                                        Layout.preferredHeight: 36
+                                        radius: 10
+                                        opacity: actionList.count > 1 && !controller.running ? 1 : 0.35
+                                        color: reorderDrag.active ? root.primarySoft : dragHover.hovered ? root.surface3 : "transparent"
+                                        border.width: reorderDrag.active ? 1 : 0
+                                        border.color: "#B8CCF5"
+                                        HoverHandler {
+                                            id: dragHover
+                                            cursorShape: reorderDrag.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                                        }
+                                        ToolTip.visible: dragHover.hovered && !reorderDrag.active
+                                        ToolTip.text: actionList.count > 1 ? "Drag to reorder" : "Add another action to reorder"
+
+                                        Grid {
+                                            anchors.centerIn: parent
+                                            columns: 2
+                                            spacing: 3
+                                            Repeater {
+                                                model: 6
+                                                Rectangle {
+                                                    width: 3
+                                                    height: 3
+                                                    radius: 2
+                                                    color: reorderDrag.active ? root.primary : root.ink3
+                                                }
+                                            }
+                                        }
+
+                                        DragHandler {
+                                            id: reorderDrag
+                                            enabled: actionList.count > 1 && !controller.running
+                                            target: null
+                                            xAxis.enabled: false
+                                            onActiveChanged: {
+                                                if (active) {
+                                                    root.beginSequenceDrag(actionCard.actionIndex)
+                                                    root.updateSequenceDrag(actionCard.actionIndex, translation.y)
+                                                } else {
+                                                    root.finishSequenceDrag(actionCard.actionIndex)
+                                                }
+                                            }
+                                            onTranslationChanged: {
+                                                if (active)
+                                                    root.updateSequenceDrag(actionCard.actionIndex, translation.y)
+                                            }
+                                        }
+                                    }
+
                                     Switch {
                                         id: enabledSwitch
                                         objectName: "actionEnabledSwitch_" + actionCard.actionIndex
                                         Layout.preferredWidth: 42
                                         Layout.preferredHeight: 32
+                                        enabled: !controller.running
                                         checked: actionCard.actionEnabled
                                         onToggled: controller.setActionEnabled(actionCard.actionIndex, checked)
                                         contentItem: Item {}
@@ -768,7 +1036,7 @@ ApplicationWindow {
                             Text {
                                 objectName: "runStatusMessage"
                                 Layout.fillWidth: true
-                                text: controller.running ? (controller.progress < 0 ? "Looping until you stop it" : "Automation is active") : controller.canRun ? "Ready when you are" : (actionList.count > 0 ? "Enable an action to begin" : "Add an action to begin")
+                                text: controller.capturePending ? "Pick a point on the frozen screen · Esc cancels" : controller.running ? controller.status : controller.targetSettings.mode === "window" && !controller.targetSettings.windowSelected ? "Choose a background target window" : controller.canRun ? "Ready when you are" : (actionList.count > 0 ? "Enable an action to begin" : "Add an action to begin")
                                 elide: Text.ElideRight
                                 color: root.ink2
                                 font.family: interMedium.name || root.font.family
@@ -824,12 +1092,12 @@ ApplicationWindow {
                                     objectName: "runStartButton"
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    text: controller.running ? "Running" : "Start"
+                                    text: controller.running ? "Running" : controller.runSettingsPending ? "Apply & start" : "Start"
                                     leading: controller.running ? "●" : "▶"
                                     keyHint: controller.runSettings.startHotkey
                                     primary: true
-                                    enabled: !controller.running && controller.canRun
-                                    onClicked: controller.startRun()
+                                    enabled: !controller.running && controller.canRun && (controller.targetSettings.mode === "desktop" || controller.targetSettings.windowSelected)
+                                    onClicked: controller.startRunWithSettings(runForm.payload())
                                 }
                             }
                         }
@@ -939,7 +1207,17 @@ ApplicationWindow {
                             id: editor
                             width: editorFlick.width - 8
                             spacing: 7
+                            enabled: !controller.running
                             property bool mouseAction: ["left_click", "right_click", "double_click", "middle_click", "scroll", "drag"].indexOf(kindValue()) >= 0
+                            property bool clickAction: ["left_click", "right_click", "double_click", "middle_click"].indexOf(kindValue()) >= 0
+                            property string coordinateSpace: "screen"
+                            property int referenceWidth: 0
+                            property int referenceHeight: 0
+                            property int referenceWidth2: 0
+                            property int referenceHeight2: 0
+                            property bool desktopTarget: controller.targetSettings.mode === "desktop"
+                            property bool needsPointerPosition: mouseAction && !(clickAction && followPointerSwitch.checked && desktopTarget)
+                            property bool targetMismatch: mouseAction && coordinateSpace !== (desktopTarget ? "screen" : "window")
 
                             function kindValue() {
                                 var values = ["key", "hotkey", "text", "left_click", "right_click", "double_click", "middle_click", "scroll", "drag"]
@@ -951,6 +1229,12 @@ ApplicationWindow {
                                 valueField.text = "space"
                                 xField.text = "0"; yField.text = "0"; x2Field.text = "0"; y2Field.text = "0"
                                 amountField.text = "-3"; durationField.text = "0.4"; repeatsField.text = "1"; delayField.text = "0.10"
+                                followPointerSwitch.checked = false
+                                coordinateSpace = controller.targetSettings.mode === "window" ? "window" : "screen"
+                                referenceWidth = 0
+                                referenceHeight = 0
+                                referenceWidth2 = 0
+                                referenceHeight2 = 0
                             }
                             function loadAction(index) {
                                 var a = controller.actionAt(index)
@@ -962,16 +1246,22 @@ ApplicationWindow {
                                 x2Field.text = a.x2 === undefined || a.x2 === null ? "0" : a.x2
                                 y2Field.text = a.y2 === undefined || a.y2 === null ? "0" : a.y2
                                 amountField.text = a.amount || -3
-                                durationField.text = a.duration || 0.4
+                                durationField.text = a.duration === undefined || a.duration === null ? 0.4 : a.duration
                                 repeatsField.text = a.repeats || 1
                                 delayField.text = a.delay === undefined ? 0.1 : a.delay
+                                followPointerSwitch.checked = a.use_current_pointer || false
+                                coordinateSpace = a.coordinate_space || "screen"
+                                referenceWidth = a.reference_width || 0
+                                referenceHeight = a.reference_height || 0
+                                referenceWidth2 = a.reference_width2 || 0
+                                referenceHeight2 = a.reference_height2 || 0
                             }
                             function payload() {
-                                return {kind: kindValue(), value: valueField.text, x: xField.text, y: yField.text, x2: x2Field.text, y2: y2Field.text, amount: amountField.text, duration: durationField.text, repeats: repeatsField.text, delay: delayField.text, enabled: true}
+                                return {kind: kindValue(), value: valueField.text, x: xField.text, y: yField.text, x2: x2Field.text, y2: y2Field.text, amount: amountField.text, duration: durationField.text, repeats: repeatsField.text, delay: delayField.text, enabled: true, useCurrentPointer: clickAction && followPointerSwitch.checked && desktopTarget, coordinateSpace: coordinateSpace, referenceWidth: referenceWidth, referenceHeight: referenceHeight, referenceWidth2: referenceWidth2, referenceHeight2: referenceHeight2}
                             }
                             Component.onCompleted: reset()
 
-                            KButton { Layout.fillWidth: true; text: root.editorIndex >= 0 ? "Editing action " + (root.editorIndex + 1) : "New action"; leading: root.editorIndex >= 0 ? "✦" : "+"; onClicked: editor.reset() }
+                            KButton { Layout.fillWidth: true; text: root.editorIndex >= 0 ? "Editing action " + (root.editorIndex + 1) : "New action"; leading: root.editorIndex >= 0 ? "✦" : "+"; onClicked: root.beginNewAction() }
                             FormLabel { text: "ACTION TYPE"; Layout.topMargin: 6 }
                             ComboBox {
                                 id: actionType
@@ -1069,14 +1359,76 @@ ApplicationWindow {
                                 onClicked: controller.recordActionKey()
                             }
 
-                            FormLabel { visible: editor.mouseAction; text: "SCREEN POSITION"; Layout.topMargin: 7 }
+                            Rectangle {
+                                visible: editor.clickAction && editor.desktopTarget
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? 58 : 0
+                                radius: 13
+                                color: root.surface2
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 13
+                                    anchors.rightMargin: 10
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Text { text: "Follow current pointer"; color: root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 12 }
+                                        Text { text: "Click wherever the pointer is during the run"; color: root.ink3; font.family: interRegular.name || root.font.family; font.pixelSize: 9 }
+                                    }
+                                    Switch { id: followPointerSwitch; objectName: "followPointerSwitch" }
+                                }
+                            }
+
+                            Rectangle {
+                                visible: editor.targetMismatch
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? 62 : 0
+                                radius: 12
+                                color: root.redSoft
+                                border.width: 1
+                                border.color: "#F2C8D0"
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.margins: 11
+                                    wrapMode: Text.WordWrap
+                                    text: editor.desktopTarget ? "This position belongs to a background window. Record it again for Desktop mode before saving or running." : "This position belongs to the desktop. Record it again for the selected window before saving or running."
+                                    color: root.red
+                                    font.family: interMedium.name || root.font.family
+                                    font.pixelSize: 10
+                                    lineHeight: 1.2
+                                }
+                            }
+
+                            FormLabel { visible: editor.needsPointerPosition; text: editor.kindValue() === "drag" ? "DRAG START POSITION" : editor.desktopTarget ? "SCREEN POSITION" : "WINDOW POSITION"; Layout.topMargin: 7 }
                             RowLayout {
-                                visible: editor.mouseAction
+                                visible: editor.needsPointerPosition
                                 Layout.fillWidth: true
                                 KField { id: xField; Layout.fillWidth: true; placeholderText: "X"; inputMethodHints: Qt.ImhDigitsOnly }
                                 KField { id: yField; Layout.fillWidth: true; placeholderText: "Y"; inputMethodHints: Qt.ImhDigitsOnly }
                             }
-                            KButton { visible: editor.mouseAction; Layout.fillWidth: true; text: "Capture current pointer"; leading: "⌖"; onClicked: controller.capturePosition(0) }
+                            KButton {
+                                objectName: "recordPointerPosition"
+                                visible: editor.needsPointerPosition
+                                Layout.fillWidth: true
+                                text: controller.capturePending && controller.captureTarget === 0 ? "Cancel point picker" : editor.kindValue() === "drag" ? "Pick start position" : "Pick pointer position"
+                                leading: controller.capturePending && controller.captureTarget === 0 ? "×" : "⌖"
+                                activeNeutral: controller.capturePending && controller.captureTarget === 0
+                                enabled: !controller.capturePending || controller.captureTarget === 0
+                                onClicked: {
+                                    if (controller.capturePending) controller.cancelPositionCapture()
+                                    else controller.startPositionCapture(0)
+                                }
+                            }
+                            Text {
+                                visible: editor.needsPointerPosition
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: controller.capturePending ? "Choose a point on the frozen screen, or press Esc to cancel." : editor.desktopTarget ? "KeyClick hides, freezes and dims the screen so you can choose the exact point without rushing." : "Choose the point on a frozen screen. It will scale with the selected window when that window is resized."
+                                color: controller.capturePending ? root.primary : root.ink3
+                                font.family: interRegular.name || root.font.family
+                                font.pixelSize: 10
+                                lineHeight: 1.2
+                            }
 
                             FormLabel { visible: editor.kindValue() === "drag"; text: "DRAG DESTINATION"; Layout.topMargin: 7 }
                             RowLayout {
@@ -1085,7 +1437,19 @@ ApplicationWindow {
                                 KField { id: x2Field; Layout.fillWidth: true; placeholderText: "X"; inputMethodHints: Qt.ImhDigitsOnly }
                                 KField { id: y2Field; Layout.fillWidth: true; placeholderText: "Y"; inputMethodHints: Qt.ImhDigitsOnly }
                             }
-                            KButton { visible: editor.kindValue() === "drag"; Layout.fillWidth: true; text: "Capture destination"; leading: "⌖"; onClicked: controller.capturePosition(1) }
+                            KButton {
+                                objectName: "recordDragDestination"
+                                visible: editor.kindValue() === "drag"
+                                Layout.fillWidth: true
+                                text: controller.capturePending && controller.captureTarget === 1 ? "Cancel point picker" : "Pick destination"
+                                leading: controller.capturePending && controller.captureTarget === 1 ? "×" : "⌖"
+                                activeNeutral: controller.capturePending && controller.captureTarget === 1
+                                enabled: !controller.capturePending || controller.captureTarget === 1
+                                onClicked: {
+                                    if (controller.capturePending) controller.cancelPositionCapture()
+                                    else controller.startPositionCapture(1)
+                                }
+                            }
 
                             FormLabel { visible: editor.kindValue() === "scroll"; text: "SCROLL STEPS"; Layout.topMargin: 7 }
                             KField { id: amountField; visible: editor.kindValue() === "scroll"; Layout.fillWidth: true; placeholderText: "-3" }
@@ -1108,17 +1472,45 @@ ApplicationWindow {
                                     KField { id: delayField; Layout.fillWidth: true; text: "0.10" }
                                 }
                             }
+                            RowLayout {
+                                visible: root.editorIndex >= 0
+                                Layout.fillWidth: true
+                                Layout.topMargin: visible ? 7 : 0
+                                KButton {
+                                    objectName: "inspectorTestActionButton"
+                                    Layout.fillWidth: true
+                                    text: "Test once"
+                                    leading: "1×"
+                                    enabled: !editor.targetMismatch
+                                    onClicked: controller.testActionWithSettings(root.editorIndex, runForm.payload())
+                                }
+                                KButton {
+                                    objectName: "inspectorRunFromButton"
+                                    Layout.fillWidth: true
+                                    text: "Run from here"
+                                    leading: "▶"
+                                    enabled: !editor.targetMismatch
+                                    onClicked: controller.startRunFromWithSettings(root.editorIndex, runForm.payload())
+                                }
+                            }
                             KButton {
+                                objectName: "actionCommitButton"
                                 Layout.fillWidth: true
                                 Layout.topMargin: 10
                                 implicitHeight: 48
                                 primary: true
+                                enabled: !editor.targetMismatch
                                 text: root.editorIndex >= 0 ? "Update action" : "Add to sequence"
                                 leading: root.editorIndex >= 0 ? "✓" : "+"
                                 onClicked: {
-                                    if (root.editorIndex >= 0) controller.updateAction(root.editorIndex, editor.payload())
-                                    else controller.addAction(editor.payload())
-                                    if (root.editorIndex < 0) editor.reset()
+                                    if (root.editorIndex >= 0) {
+                                        controller.updateAction(root.editorIndex, editor.payload())
+                                    } else {
+                                        if (controller.addAction(editor.payload())) {
+                                            controller.selectedIndex = -1
+                                            editor.reset()
+                                        }
+                                    }
                                 }
                             }
                             Item { Layout.preferredHeight: 12 }
@@ -1136,9 +1528,100 @@ ApplicationWindow {
                             id: runForm
                             width: runFlick.width - 8
                             spacing: 7
-                            function apply() {
-                                controller.applyRunSettings({repeatForever: foreverSwitch.checked, repeatCount: repeatCount.text, startDelay: startDelay.text, cycleInterval: cycleInterval.text, textInterval: textInterval.text, jitter: jitter.text, startHotkey: startHotkey.text, captureHotkey: captureHotkey.text, stopHotkey: stopHotkey.text})
+                            enabled: !controller.running
+                            function payload() {
+                                return {repeatForever: foreverSwitch.checked, repeatCount: repeatCount.text, startDelay: startDelay.text, cycleInterval: cycleInterval.text, textInterval: textInterval.text, jitter: jitter.text, startHotkey: startHotkey.text, captureHotkey: captureHotkey.text, stopHotkey: stopHotkey.text}
                             }
+                            function apply() {
+                                return controller.applyRunSettings(payload())
+                            }
+                            FormLabel { text: "TARGET" }
+                            Text { text: "Where should actions run?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
+                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Desktop uses your real keyboard and pointer. Background window sends actions only to one selected app."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11; lineHeight: 1.25 }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 7
+                                KButton {
+                                    id: desktopTargetModeButton
+                                    objectName: "desktopTargetModeButton"
+                                    Layout.fillWidth: true
+                                    text: "Desktop"
+                                    leading: "▣"
+                                    activeNeutral: controller.targetSettings.mode === "desktop"
+                                    onClicked: controller.setTargetMode("desktop")
+                                }
+                                KButton {
+                                    id: windowTargetModeButton
+                                    objectName: "windowTargetModeButton"
+                                    Layout.fillWidth: true
+                                    text: "Background"
+                                    leading: "▤"
+                                    activeNeutral: controller.targetSettings.mode === "window"
+                                    onClicked: {
+                                        if (controller.setTargetMode("window"))
+                                            root.openWindowPicker()
+                                    }
+                                }
+                            }
+                            Text {
+                                visible: controller.targetSettings.mode === "desktop"
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: "Best for universal compatibility. Pointer actions control the physical mouse."
+                                color: root.ink3
+                                font.family: interRegular.name || root.font.family
+                                font.pixelSize: 10
+                            }
+                            Rectangle {
+                                visible: controller.targetSettings.mode === "window"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? 116 : 0
+                                radius: 13
+                                color: root.surface2
+                                border.width: 1
+                                border.color: controller.targetSettings.windowSelected ? "#C9D8F5" : root.line
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 7
+                                    FormLabel { text: controller.targetSettings.windowSelected ? "SELECTED WINDOW" : "NO WINDOW SELECTED" }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: controller.targetSettings.displayName
+                                        elide: Text.ElideMiddle
+                                        color: controller.targetSettings.windowSelected ? root.ink : root.ink3
+                                        font.family: interSemiBold.name || root.font.family
+                                        font.pixelSize: 12
+                                    }
+                                    KButton {
+                                        objectName: "pickWindowButton"
+                                        Layout.fillWidth: true
+                                        text: controller.targetSettings.windowSelected ? "Browse open windows" : "Choose a window"
+                                        leading: "▦"
+                                        onClicked: root.openWindowPicker()
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                visible: controller.targetSettings.mode === "window"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? 82 : 0
+                                radius: 12
+                                color: "#FFF8E8"
+                                border.width: 1
+                                border.color: "#F0D99B"
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.margins: 11
+                                    wrapMode: Text.WordWrap
+                                    text: "Your pointer remains free and the target can stay behind other windows. Keep it open and restored. Elevated, raw-input, game, or some modern app controls may reject background input."
+                                    color: "#785A12"
+                                    font.family: interMedium.name || root.font.family
+                                    font.pixelSize: 10
+                                    lineHeight: 1.2
+                                }
+                            }
+                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line; Layout.topMargin: 9; Layout.bottomMargin: 5 }
                             FormLabel { text: "RUN PLAN" }
                             Text { text: "Choose when it stops"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
                             Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Run a fixed number of cycles or continue until you press Stop."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11; lineHeight: 1.25 }
@@ -1149,28 +1632,28 @@ ApplicationWindow {
                                     anchors.leftMargin: 13
                                     anchors.rightMargin: 10
                                     Text { Layout.fillWidth: true; text: "Loop indefinitely"; color: root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 12 }
-                                    Switch { id: foreverSwitch; checked: controller.runSettings.repeatForever }
+                                    Switch { id: foreverSwitch; checked: controller.runSettings.repeatForever; onToggled: controller.markRunSettingsPending() }
                                 }
                             }
                             FormLabel { text: "REPEAT CYCLES"; Layout.topMargin: 7 }
-                            KField { id: repeatCount; Layout.fillWidth: true; text: controller.runSettings.repeatCount; enabled: !foreverSwitch.checked }
+                            KField { id: repeatCount; Layout.fillWidth: true; text: controller.runSettings.repeatCount; enabled: !foreverSwitch.checked; onTextEdited: controller.markRunSettingsPending() }
                             FormLabel { text: "START COUNTDOWN"; Layout.topMargin: 7 }
-                            KField { id: startDelay; Layout.fillWidth: true; text: controller.runSettings.startDelay }
+                            KField { id: startDelay; Layout.fillWidth: true; text: controller.runSettings.startDelay; onTextEdited: controller.markRunSettingsPending() }
                             FormLabel { text: "BETWEEN CYCLES"; Layout.topMargin: 7 }
-                            KField { id: cycleInterval; Layout.fillWidth: true; text: controller.runSettings.cycleInterval }
+                            KField { id: cycleInterval; Layout.fillWidth: true; text: controller.runSettings.cycleInterval; onTextEdited: controller.markRunSettingsPending() }
                             RowLayout {
                                 Layout.fillWidth: true
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 4
                                     FormLabel { text: "TYPING INTERVAL" }
-                                    KField { id: textInterval; Layout.fillWidth: true; text: controller.runSettings.textInterval }
+                                    KField { id: textInterval; Layout.fillWidth: true; text: controller.runSettings.textInterval; onTextEdited: controller.markRunSettingsPending() }
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 4
                                     FormLabel { text: "VARIATION ±" }
-                                    KField { id: jitter; Layout.fillWidth: true; text: controller.runSettings.jitter }
+                                    KField { id: jitter; Layout.fillWidth: true; text: controller.runSettings.jitter; onTextEdited: controller.markRunSettingsPending() }
                                 }
                             }
                             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line; Layout.topMargin: 10; Layout.bottomMargin: 5 }
@@ -1179,7 +1662,7 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Start / toggle"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
-                                KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey }
+                                KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_start"
                                     implicitWidth: 106
@@ -1191,8 +1674,8 @@ ApplicationWindow {
                             }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Capture"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
-                                KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey }
+                                Text { text: "Record pointer"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_capture"
                                     implicitWidth: 106
@@ -1205,7 +1688,7 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Emergency stop"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
-                                KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey }
+                                KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_stop"
                                     implicitWidth: 106
@@ -1215,8 +1698,790 @@ ApplicationWindow {
                                     onClicked: if (controller.recordGlobalShortcut("stop")) root.shortcutRecordingTarget = "stop"
                                 }
                             }
-                            KButton { Layout.fillWidth: true; Layout.topMargin: 8; primary: true; text: "Apply run settings"; leading: "✓"; onClicked: runForm.apply() }
+                            KButton { Layout.fillWidth: true; Layout.topMargin: 8; primary: true; text: controller.runSettingsPending ? "Apply run settings" : "Run settings applied"; leading: controller.runSettingsPending ? "✓" : "●"; onClicked: runForm.apply() }
                             Item { Layout.preferredHeight: 12 }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Drawer {
+        id: profileDrawer
+        objectName: "profileLibraryDrawer"
+        edge: Qt.LeftEdge
+        width: Math.min(408, root.width - 24)
+        height: root.height
+        modal: true
+        dim: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: controller.refreshProfiles()
+        background: Rectangle {
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            clip: true
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 92
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 14
+                    spacing: 8
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text {
+                            text: "Profiles"
+                            color: root.ink
+                            font.family: interBold.name || root.font.family
+                            font.pixelSize: 23
+                            font.weight: Font.Bold
+                        }
+                        Text {
+                            text: controller.profileEntries.length === 1
+                                  ? "1 saved sequence"
+                                  : controller.profileEntries.length + " saved sequences"
+                            color: root.ink2
+                            font.family: interRegular.name || root.font.family
+                            font.pixelSize: 12
+                        }
+                    }
+                    KButton {
+                        objectName: "refreshProfileLibraryButton"
+                        quiet: true
+                        leading: "↻"
+                        implicitWidth: 42
+                        Accessible.name: "Refresh profiles"
+                        ToolTip.visible: pointerHover
+                        ToolTip.text: "Refresh profiles"
+                        onClicked: controller.refreshProfiles()
+                    }
+                    KButton {
+                        objectName: "closeProfileLibraryButton"
+                        quiet: true
+                        leading: "×"
+                        implicitWidth: 42
+                        Accessible.name: "Close profiles"
+                        ToolTip.visible: pointerHover
+                        ToolTip.text: "Close profiles"
+                        onClicked: profileDrawer.close()
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 88
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 14
+                    anchors.topMargin: 12
+                    anchors.bottomMargin: 12
+                    spacing: 5
+                    FormLabel { text: "PROFILE FOLDER" }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            objectName: "profileDirectoryLabel"
+                            Layout.fillWidth: true
+                            text: controller.profileDirectory
+                            elide: Text.ElideMiddle
+                            color: root.ink2
+                            font.family: interMedium.name || root.font.family
+                            font.pixelSize: 11
+                            ToolTip.visible: directoryHover.hovered
+                            ToolTip.text: controller.profileDirectory
+                            HoverHandler { id: directoryHover }
+                        }
+                        KButton {
+                            objectName: "chooseProfileFolderButton"
+                            text: "Change"
+                            quiet: true
+                            implicitWidth: 78
+                            implicitHeight: 36
+                            onClicked: controller.chooseProfileFolder()
+                        }
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 180
+
+                ListView {
+                    id: profileList
+                    objectName: "profileLibraryList"
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 14
+                    anchors.topMargin: 4
+                    anchors.bottomMargin: 8
+                    spacing: 8
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: controller.profileEntries
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    delegate: AbstractButton {
+                        id: profileRow
+                        required property var modelData
+                        required property int index
+                        readonly property string profilePath: modelData.path
+                        readonly property bool currentProfile: modelData.path === controller.currentProfilePath
+                        property bool pointerHover: false
+                        objectName: "profileLibraryRow_" + index
+                        width: ListView.view.width
+                        height: 80
+                        enabled: modelData.valid && !controller.running
+                        hoverEnabled: true
+                        Accessible.name: (currentProfile ? "Current profile, " : "Open profile, ") + modelData.name
+                        Accessible.description: modelData.valid
+                              ? modelData.actionCount + " actions. Modified " + modelData.modified
+                              : "Unavailable profile"
+                        HoverHandler { onHoveredChanged: profileRow.pointerHover = hovered }
+                        ToolTip.visible: profileRow.pointerHover
+                        ToolTip.text: modelData.valid ? modelData.path : modelData.error
+                        onClicked: {
+                            if (profileRow.currentProfile)
+                                profileDrawer.close()
+                            else
+                                root.requestProfileOpen(modelData.path)
+                        }
+                        background: Rectangle {
+                            radius: 14
+                            color: profileRow.currentProfile ? root.primarySoft
+                                 : profileRow.down ? "#E8EEF8"
+                                 : profileRow.pointerHover ? "#F4F7FF"
+                                 : root.surface
+                            border.width: profileRow.currentProfile ? 2 : 1
+                            border.color: profileRow.currentProfile ? root.primary
+                                        : profileRow.pointerHover ? "#B8CCF5"
+                                        : root.line
+                            scale: profileRow.down ? 0.992 : 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on scale { NumberAnimation { duration: 90 } }
+                        }
+                        contentItem: RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            spacing: 11
+                            Rectangle {
+                                Layout.preferredWidth: 38
+                                Layout.preferredHeight: 38
+                                radius: 11
+                                color: profileRow.currentProfile ? root.primary : root.surface2
+                                border.width: profileRow.currentProfile ? 0 : 1
+                                border.color: root.line
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 24
+                                    height: 24
+                                    source: "../assets/app-logo-transparent.png"
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    mipmap: true
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: profileRow.modelData.name
+                                        elide: Text.ElideRight
+                                        color: profileRow.modelData.valid ? root.ink : root.red
+                                        font.family: interSemiBold.name || root.font.family
+                                        font.pixelSize: 13
+                                    }
+                                    Rectangle {
+                                        visible: profileRow.currentProfile
+                                        implicitWidth: currentProfileLabel.implicitWidth + 14
+                                        implicitHeight: 20
+                                        radius: 7
+                                        color: root.primary
+                                        Text {
+                                            id: currentProfileLabel
+                                            anchors.centerIn: parent
+                                            text: "CURRENT"
+                                            color: "white"
+                                            font.family: interSemiBold.name || root.font.family
+                                            font.pixelSize: 8
+                                            font.letterSpacing: 0.45
+                                        }
+                                    }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: profileRow.modelData.valid
+                                          ? (profileRow.modelData.actionCount === 1
+                                             ? "1 action"
+                                             : profileRow.modelData.actionCount + " actions")
+                                            + "  ·  " + profileRow.modelData.modified
+                                          : "Could not read this profile"
+                                    elide: Text.ElideRight
+                                    color: profileRow.modelData.valid ? root.ink3 : root.red
+                                    font.family: interRegular.name || root.font.family
+                                    font.pixelSize: 11
+                                }
+                            }
+                            Text {
+                                visible: profileRow.modelData.valid && !profileRow.currentProfile
+                                text: "›"
+                                color: root.ink3
+                                font.family: interSemiBold.name || root.font.family
+                                font.pixelSize: 20
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    objectName: "profileLibraryEmptyState"
+                    visible: profileList.count === 0
+                    anchors.centerIn: parent
+                    width: Math.min(300, parent.width - 40)
+                    spacing: 10
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 54
+                        height: 54
+                        radius: 17
+                        color: root.primarySoft
+                        Image {
+                            anchors.centerIn: parent
+                            width: 32
+                            height: 32
+                            source: "../assets/app-logo-transparent.png"
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "No saved profiles here"
+                        color: root.ink
+                        font.family: interBold.name || root.font.family
+                        font.pixelSize: 17
+                        font.weight: Font.Bold
+                    }
+                    Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        text: "Save this sequence or choose the folder that already contains your KeyClick profiles."
+                        color: root.ink2
+                        font.family: interRegular.name || root.font.family
+                        font.pixelSize: 12
+                        lineHeight: 1.3
+                    }
+                    KButton {
+                        objectName: "profileLibraryEmptySaveButton"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "Save this profile"
+                        primary: true
+                        implicitWidth: 156
+                        onClicked: root.saveProfileAsWithVisibleSettings()
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 76
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 14
+                    spacing: 8
+                    KButton {
+                        objectName: "profileLibrarySaveAsButton"
+                        Layout.fillWidth: true
+                        text: "Save as…"
+                        enabled: !controller.running
+                        onClicked: root.saveProfileAsWithVisibleSettings()
+                    }
+                    KButton {
+                        objectName: "profileLibraryOpenFileButton"
+                        Layout.fillWidth: true
+                        text: "Open file…"
+                        enabled: !controller.running
+                        onClicked: root.requestDestructiveAction("open")
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: windowPickerDialog
+        objectName: "windowPickerDialog"
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(780, root.width - 48)
+        height: Math.min(610, root.height - 48)
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 0
+        background: Rectangle {
+            radius: 20
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 96
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 22
+                    anchors.rightMargin: 16
+                    spacing: 12
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 5
+                        Text {
+                            text: "Choose where KeyClick runs"
+                            color: root.ink
+                            font.family: interBold.name || root.font.family
+                            font.pixelSize: 20
+                            font.weight: Font.Bold
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Use the desktop, or send actions to one open window while your pointer stays free."
+                            color: root.ink2
+                            elide: Text.ElideRight
+                            font.family: interRegular.name || root.font.family
+                            font.pixelSize: 11
+                        }
+                    }
+                    KButton {
+                        objectName: "windowPickerRefreshButton"
+                        Layout.preferredWidth: 94
+                        text: "Refresh"
+                        leading: "↻"
+                        quiet: true
+                        onClicked: controller.refreshWindowEntries()
+                    }
+                    KButton {
+                        objectName: "windowPickerCloseButton"
+                        Layout.preferredWidth: 44
+                        text: ""
+                        leading: "×"
+                        quiet: true
+                        Accessible.name: "Close window picker"
+                        onClicked: windowPickerDialog.close()
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            ScrollView {
+                id: windowPickerScroll
+                objectName: "windowPickerScroll"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    implicitWidth: 10
+                    background: Item {}
+                    contentItem: Rectangle {
+                        implicitWidth: 6
+                        radius: 3
+                        color: parent.pressed ? root.ink3 : "#B8C1CF"
+                        opacity: parent.active ? 0.9 : 0.55
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
+                }
+
+                ColumnLayout {
+                    width: windowPickerScroll.availableWidth
+                    spacing: 10
+
+                    FormLabel {
+                        text: "ENTIRE SCREEN"
+                        Layout.leftMargin: 22
+                        Layout.topMargin: 18
+                    }
+
+                    AbstractButton {
+                        id: desktopWindowChoice
+                        objectName: "desktopWindowChoice"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 112
+                        Layout.leftMargin: 20
+                        Layout.rightMargin: 20
+                        hoverEnabled: true
+                        Accessible.name: "Use the entire desktop"
+                        onClicked: {
+                            controller.setTargetMode("desktop")
+                            root.closeWindowPicker()
+                        }
+                        background: Rectangle {
+                            radius: 15
+                            color: desktopWindowChoice.down ? "#E2ECFF"
+                                 : desktopWindowChoice.hovered ? "#F3F7FF" : root.surface
+                            border.width: controller.targetSettings.mode === "desktop" ? 2 : 1
+                            border.color: controller.targetSettings.mode === "desktop" ? root.primary
+                                        : desktopWindowChoice.hovered ? "#B8CCF5" : root.line
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                        }
+                        contentItem: RowLayout {
+                            spacing: 14
+                            Rectangle {
+                                Layout.preferredWidth: 142
+                                Layout.fillHeight: true
+                                Layout.margins: 8
+                                radius: 11
+                                clip: true
+                                color: root.surface2
+                                Image {
+                                    id: desktopPreviewImage
+                                    anchors.fill: parent
+                                    source: controller.desktopPreviewUrl
+                                    visible: status === Image.Ready
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: false
+                                }
+                                Item {
+                                    anchors.centerIn: parent
+                                    visible: desktopPreviewImage.status !== Image.Ready
+                                    width: 46
+                                    height: 38
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 42
+                                        height: 27
+                                        radius: 4
+                                        color: "transparent"
+                                        border.width: 2
+                                        border.color: root.primary
+                                    }
+                                    Rectangle { anchors.horizontalCenter: parent.horizontalCenter; y: 28; width: 3; height: 5; radius: 1; color: root.primary }
+                                    Rectangle { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; width: 24; height: 3; radius: 2; color: root.primary }
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+                                Text { text: "Desktop"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 15 }
+                                Text { Layout.fillWidth: true; text: "Controls the real keyboard and pointer across your screens"; color: root.ink2; wrapMode: Text.WordWrap; font.family: interRegular.name || root.font.family; font.pixelSize: 11 }
+                            }
+                            Rectangle {
+                                visible: controller.targetSettings.mode === "desktop"
+                                Layout.preferredWidth: 76
+                                Layout.preferredHeight: 26
+                                Layout.rightMargin: 12
+                                radius: 9
+                                color: root.primarySoft
+                                Text { anchors.centerIn: parent; text: "SELECTED"; color: root.primary; font.family: interSemiBold.name || root.font.family; font.pixelSize: 8; font.letterSpacing: 0.4 }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 22
+                        Layout.rightMargin: 20
+                        Layout.topMargin: 7
+                        FormLabel { Layout.fillWidth: true; text: "OPEN WINDOWS" }
+                        Text {
+                            text: controller.windowEntries.length === 1 ? "1 window" : controller.windowEntries.length + " windows"
+                            color: root.ink3
+                            font.family: interRegular.name || root.font.family
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    GridLayout {
+                        id: windowChoiceGrid
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        Layout.rightMargin: 20
+                        columns: windowPickerDialog.width >= 700 ? 3 : 2
+                        columnSpacing: 10
+                        rowSpacing: 10
+
+                        Repeater {
+                            model: controller.windowEntries
+                            delegate: AbstractButton {
+                                id: windowChoice
+                                required property var modelData
+                                required property int index
+                                objectName: "windowChoice_" + index
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 176
+                                enabled: !modelData.minimized
+                                hoverEnabled: true
+                                Accessible.name: "Use " + modelData.appName + ", " + modelData.title
+                                ToolTip.visible: hovered
+                                ToolTip.text: modelData.title
+                                onClicked: controller.selectWindowTarget(modelData.handle)
+                                background: Rectangle {
+                                    radius: 15
+                                    color: windowChoice.down ? "#E2ECFF"
+                                         : windowChoice.hovered ? "#F3F7FF" : root.surface
+                                    border.width: windowChoice.modelData.selected ? 2 : 1
+                                    border.color: windowChoice.modelData.selected ? root.primary
+                                                : windowChoice.hovered ? "#B8CCF5" : root.line
+                                    opacity: windowChoice.enabled ? 1 : 0.58
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                                }
+                                contentItem: ColumnLayout {
+                                    spacing: 7
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 104
+                                        Layout.margins: 7
+                                        Layout.bottomMargin: 0
+                                        radius: 10
+                                        clip: true
+                                        color: root.surface2
+                                        Image {
+                                            id: windowPreviewImage
+                                            anchors.fill: parent
+                                            source: windowChoice.modelData.previewUrl
+                                            visible: status === Image.Ready
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                            cache: false
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            visible: windowPreviewImage.status !== Image.Ready
+                                            color: root.primarySoft
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: windowChoice.modelData.appName.length > 0 ? windowChoice.modelData.appName.charAt(0) : "W"
+                                                color: root.primary
+                                                font.family: interBold.name || root.font.family
+                                                font.pixelSize: 28
+                                            }
+                                        }
+                                        Rectangle {
+                                            visible: windowChoice.modelData.selected || windowChoice.modelData.minimized
+                                            anchors.top: parent.top
+                                            anchors.right: parent.right
+                                            anchors.margins: 7
+                                            implicitWidth: windowStateLabel.implicitWidth + 14
+                                            implicitHeight: 22
+                                            radius: 8
+                                            color: windowChoice.modelData.selected ? root.primary : "#DDE3EC"
+                                            Text {
+                                                id: windowStateLabel
+                                                anchors.centerIn: parent
+                                                text: windowChoice.modelData.selected ? "SELECTED" : "RESTORE TO USE"
+                                                color: windowChoice.modelData.selected ? "white" : root.ink2
+                                                font.family: interSemiBold.name || root.font.family
+                                                font.pixelSize: 7
+                                                font.letterSpacing: 0.35
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        Layout.leftMargin: 10
+                                        Layout.rightMargin: 10
+                                        text: windowChoice.modelData.appName
+                                        elide: Text.ElideRight
+                                        color: root.ink
+                                        font.family: interSemiBold.name || root.font.family
+                                        font.pixelSize: 12
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        Layout.leftMargin: 10
+                                        Layout.rightMargin: 10
+                                        Layout.bottomMargin: 8
+                                        text: windowChoice.modelData.title
+                                        elide: Text.ElideRight
+                                        color: root.ink3
+                                        font.family: interRegular.name || root.font.family
+                                        font.pixelSize: 9
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        visible: controller.windowEntries.length === 0
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 28
+                        Layout.rightMargin: 28
+                        Layout.topMargin: 8
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        text: "No usable app windows are visible. Open or restore the app, then choose Refresh."
+                        color: root.ink3
+                        font.family: interRegular.name || root.font.family
+                        font.pixelSize: 11
+                    }
+                    Item { Layout.fillWidth: true; Layout.preferredHeight: 18 }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: recoveryDialog
+        objectName: "recoveryDialog"
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        width: 440
+        height: 258
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 22
+        background: Rectangle {
+            radius: 18
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 10
+            Text { text: "Recover your sequence?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 20; font.weight: Font.Bold }
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "KeyClick found an autosaved recovery copy from the previous session.\n" + controller.draftSummary
+                color: root.ink2
+                font.family: interRegular.name || root.font.family
+                font.pixelSize: 12
+                lineHeight: 1.3
+            }
+            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                KButton {
+                    objectName: "recoveryDiscardButton"
+                    Layout.preferredWidth: 104
+                    text: "Discard"
+                    danger: true
+                    onClicked: {
+                        controller.discardDraft()
+                        recoveryDialog.close()
+                    }
+                }
+                KButton {
+                    objectName: "recoveryAcceptButton"
+                    Layout.preferredWidth: 164
+                    text: "Recover sequence"
+                    primary: true
+                    onClicked: {
+                        if (controller.recoverDraft()) {
+                            recoveryDialog.close()
+                            if (controller.selectedIndex >= 0) {
+                                root.editorIndex = controller.selectedIndex
+                                editor.loadAction(controller.selectedIndex)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: unsavedDialog
+        objectName: "unsavedChangesDialog"
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        width: 460
+        height: 258
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 22
+        background: Rectangle {
+            radius: 18
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 10
+            Text { text: "Save your changes?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 20; font.weight: Font.Bold }
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: root.pendingDestructiveAction === "close" ? "This sequence has unsaved changes. Save it before closing KeyClick, discard the changes, or return to the editor." : "This sequence has unsaved changes. Save it before continuing, discard the changes, or cancel."
+                color: root.ink2
+                font.family: interRegular.name || root.font.family
+                font.pixelSize: 12
+                lineHeight: 1.3
+            }
+            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                KButton {
+                    objectName: "unsavedCancelButton"
+                    text: "Cancel"
+                    Layout.preferredWidth: 88
+                    onClicked: {
+                        root.pendingDestructiveAction = ""
+                        root.pendingProfilePath = ""
+                        unsavedDialog.close()
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                KButton {
+                    objectName: "unsavedDiscardButton"
+                    text: "Discard"
+                    danger: true
+                    Layout.preferredWidth: 96
+                    onClicked: {
+                        var action = root.pendingDestructiveAction
+                        root.pendingDestructiveAction = ""
+                        unsavedDialog.close()
+                        root.performDestructiveAction(action)
+                    }
+                }
+                KButton {
+                    objectName: "unsavedSaveButton"
+                    Layout.preferredWidth: 168
+                    text: "Save & continue"
+                    primary: true
+                    onClicked: {
+                        var action = root.pendingDestructiveAction
+                        if (root.saveProfileWithVisibleSettings()) {
+                            root.pendingDestructiveAction = ""
+                            unsavedDialog.close()
+                            root.performDestructiveAction(action)
                         }
                     }
                 }
@@ -1258,9 +2523,25 @@ ApplicationWindow {
             toast.opacity = 1
             toastTimer.restart()
         }
-        function onPositionCaptured(target, x, y) {
-            if (target === 0) { xField.text = x; yField.text = y }
-            else { x2Field.text = x; y2Field.text = y }
+        function onSelectedIndexChanged() {
+            if (controller.selectedIndex >= 0) {
+                root.editorIndex = controller.selectedIndex
+                editor.loadAction(controller.selectedIndex)
+            } else if (root.editorIndex >= 0) {
+                editor.reset()
+            }
+        }
+        function onPositionCaptured(target, x, y, coordinateSpace, referenceWidth, referenceHeight) {
+            if (target === 0) {
+                xField.text = x; yField.text = y
+                editor.referenceWidth = referenceWidth
+                editor.referenceHeight = referenceHeight
+            } else {
+                x2Field.text = x; y2Field.text = y
+                editor.referenceWidth2 = referenceWidth
+                editor.referenceHeight2 = referenceHeight
+            }
+            editor.coordinateSpace = coordinateSpace
         }
         function onActionKeyCaptured(value) {
             valueField.text = value
@@ -1270,11 +2551,31 @@ ApplicationWindow {
             else if (target === "capture") captureHotkey.text = value
             else if (target === "stop") stopHotkey.text = value
             root.shortcutRecordingTarget = ""
+            controller.markRunSettingsPending()
         }
         function onRunSettingsChanged() {
+            foreverSwitch.checked = controller.runSettings.repeatForever
+            repeatCount.text = controller.runSettings.repeatCount
+            startDelay.text = controller.runSettings.startDelay
+            cycleInterval.text = controller.runSettings.cycleInterval
+            textInterval.text = controller.runSettings.textInterval
+            jitter.text = controller.runSettings.jitter
             startHotkey.text = controller.runSettings.startHotkey
             captureHotkey.text = controller.runSettings.captureHotkey
             stopHotkey.text = controller.runSettings.stopHotkey
+        }
+        function onTargetSettingsChanged() {
+            if (windowPickerDialog.opened && controller.targetSettings.windowSelected)
+                root.closeWindowPicker()
+            if (root.editorIndex < 0) {
+                editor.coordinateSpace = controller.targetSettings.mode === "window" ? "window" : "screen"
+                editor.referenceWidth = 0
+                editor.referenceHeight = 0
+                editor.referenceWidth2 = 0
+                editor.referenceHeight2 = 0
+                if (controller.targetSettings.mode === "window")
+                    followPointerSwitch.checked = false
+            }
         }
     }
 }

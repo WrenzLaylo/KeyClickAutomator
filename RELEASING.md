@@ -56,6 +56,30 @@ Installer build:
 - Launch the portable `.exe` by itself.
 - Launch the installed application from its shortcut.
 - Add, edit, disable, re-enable, and run a short sequence.
+- Confirm a fixed pointer position hides KeyClick, freezes and dims every monitor,
+  records the clicked point without activating the underlying app, and lets `Esc`
+  cancel safely.
+- Confirm **Follow current pointer** clicks without moving the pointer back to a
+  saved position.
+- In **Background window** mode, confirm the visual picker shows Desktop and open
+  app windows, refreshes its list, marks the selected target, and disables
+  minimized windows until they are restored.
+- Record a relative click, resize the target in both directions, cover it with
+  another window, and confirm the click tracks the same relative location without
+  moving the physical pointer or stealing focus. Repeat with both endpoints of a
+  drag action.
+- Confirm a minimized, closed, or higher-privilege target produces a clear
+  recovery message instead of falling back to desktop input.
+- Confirm **Test once**, **Run from here**, delete undo, and draft recovery.
+- Confirm sequence cards drag by their six-dot grip, show one insertion guide,
+  land in the expected order, and still move with **Up**/**Down**. During the drag,
+  only the card moves; its numbered badge and connector stay anchored.
+- Confirm the recovery and unsaved-changes dialogs keep every action fully inside
+  the modal at the minimum supported window size.
+- Confirm **Profiles** lists sibling `.kca.json` files, marks the current profile,
+  switches without a system dialog, and protects unsaved changes.
+- Confirm **Change**, **Open file…**, `Ctrl+S`, and `Ctrl+Shift+S` update the profile
+  folder and list as documented.
 - Confirm `F6`, `F8`, and `F9` match the Run inspector.
 - Record the SHA-256 hashes of both release files.
 - Commit the source and documentation together.

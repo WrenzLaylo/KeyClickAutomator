@@ -9,14 +9,14 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Callable, Iterable, Protocol
 
 
 VALID_ACTIONS = {
     "key", "hotkey", "text", "left_click", "right_click",
     "double_click", "middle_click", "scroll", "drag",
 }
-DEFAULT_RESERVED_KEYS = {"f6", "f8", "f9"}
+DEFAULT_RESERVED_SHORTCUTS = {"f6", "f8", "f9"}
 KEY_RE = re.compile(r"^[a-zA-Z0-9_+\-.,/\\;='\[\]` ]+$")
 HOTKEY_NAMED_KEYS = {
     "alt", "alt_gr", "backspace", "caps_lock", "cmd", "ctrl", "delete",
@@ -29,6 +29,12 @@ HOTKEY_ALIASES = {
     "control": "ctrl", "escape": "esc", "return": "enter",
     "windows": "cmd", "win": "cmd",
 }
+
+
+def _canonicalize_hotkey_parts(parts: Iterable[str]) -> str:
+    modifier_order = {name: index for index, name in enumerate(("ctrl", "alt", "shift", "cmd", "alt_gr"))}
+    canonical = sorted(parts, key=lambda part: (0, modifier_order[part]) if part in modifier_order else (1, part))
+    return "+".join(canonical)
 
 
 class AutomationBackend(Protocol):
@@ -63,9 +69,12 @@ def validate_global_hotkey(value: str, label: str = "Hotkey") -> str:
         raise ValueError(f"{label} is invalid.")
     if len(set(parts)) != len(parts):
         raise ValueError(f"{label} is invalid.")
-    modifier_order = {name: index for index, name in enumerate(("ctrl", "alt", "shift", "cmd", "alt_gr"))}
-    canonical = sorted(parts, key=lambda part: (0, modifier_order[part]) if part in modifier_order else (1, part))
-    return "+".join(canonical)
+    return _canonicalize_hotkey_parts(parts)
+
+
+def canonical_global_shortcuts(values: Iterable[str]) -> set[str]:
+    """Return complete canonical chords reserved by the global controls."""
+    return {validate_global_hotkey(value) for value in values}
 
 
 @dataclass
@@ -88,7 +97,7 @@ class Action:
     reference_width2: int = 0
     reference_height2: int = 0
 
-    def validate(self, reserved_keys: set[str] | None = None) -> None:
+    def validate(self, reserved_shortcuts: set[str] | None = None) -> None:
         if self.kind not in VALID_ACTIONS:
             raise ValueError(f"Unsupported action: {self.kind}")
         if not 0 <= self.delay_after <= 3600:
@@ -99,11 +108,25 @@ class Action:
             value = self.value.strip()
             if not value or not KEY_RE.fullmatch(value):
                 raise ValueError("Enter a valid key or hotkey, such as space, enter, a, or ctrl+shift+s.")
-            key_parts = {part.strip().lower() for part in value.split("+")}
-            reserved = key_parts & (DEFAULT_RESERVED_KEYS if reserved_keys is None else reserved_keys)
-            if reserved:
-                names = ", ".join(sorted(key.upper() for key in reserved))
-                raise ValueError(f"{names} is reserved by the app's global controls and cannot be an action.")
+            raw_parts = [part.strip().lower() for part in value.split("+")]
+            if self.kind == "key" and len(raw_parts) != 1:
+                raise ValueError("A key action accepts one key only. Use a Hotkey action for combinations like ctrl+s.")
+            if self.kind == "hotkey" and (len(raw_parts) < 2 or any(not part for part in raw_parts)):
+                raise ValueError("A hotkey action requires at least two keys separated by +.")
+            key_parts = [HOTKEY_ALIASES.get(part, part) for part in raw_parts]
+            if len(set(key_parts)) != len(key_parts):
+                raise ValueError("A key or hotkey cannot repeat the same key.")
+            reserved = DEFAULT_RESERVED_SHORTCUTS if reserved_shortcuts is None else reserved_shortcuts
+            action_parts = set(key_parts)
+            conflicts = sorted(
+                shortcut for shortcut in reserved
+                if set(shortcut.split("+")).issubset(action_parts)
+            )
+            if conflicts:
+                names = ", ".join(shortcut.upper() for shortcut in conflicts)
+                raise ValueError(
+                    f"{names} is reserved by the app's global controls and cannot be an action."
+                )
         if self.kind == "text" and len(self.value) > 10_000:
             raise ValueError("Text actions are limited to 10,000 characters.")
         click_actions = {"left_click", "right_click", "double_click", "middle_click"}
@@ -247,8 +270,8 @@ class AutomationRunner:
             return scaler(x, y, reference_width, reference_height)
         return int(x), int(y)
 
-    def execute_action(self, action: Action, text_key_interval: float, reserved_keys: set[str] | None = None) -> None:
-        action.validate(reserved_keys)
+    def execute_action(self, action: Action, text_key_interval: float, reserved_shortcuts: set[str] | None = None) -> None:
+        action.validate(reserved_shortcuts)
         if action.kind == "key":
             self.backend.press(action.value.strip().lower())
         elif action.kind == "hotkey":
@@ -282,11 +305,11 @@ class AutomationRunner:
         action: Action,
         text_key_interval: float,
         stop_event: threading.Event,
-        reserved_keys: set[str],
+        reserved_shortcuts: set[str],
     ) -> bool:
         """Execute long actions in cancellable chunks and always release held input."""
         if action.kind == "text":
-            action.validate(reserved_keys)
+            action.validate(reserved_shortcuts)
             for character in action.value:
                 if stop_event.is_set():
                     return False
@@ -296,7 +319,7 @@ class AutomationRunner:
             return True
 
         if action.kind == "drag":
-            action.validate(reserved_keys)
+            action.validate(reserved_shortcuts)
             start_x, start_y = self._point_for_action(action)
             end_x, end_y = self._point_for_action(action, destination=True)
             self.backend.moveTo(start_x, start_y, _pause=False)
@@ -316,7 +339,7 @@ class AutomationRunner:
             finally:
                 self._release_drag_mouse(end_x, end_y)
 
-        self.execute_action(action, text_key_interval, reserved_keys)
+        self.execute_action(action, text_key_interval, reserved_shortcuts)
         return not stop_event.is_set()
 
     def run(
@@ -329,13 +352,11 @@ class AutomationRunner:
         if not actions:
             raise ValueError("Add at least one action before starting.")
         settings.validate()
-        reserved_keys = {
-            part.strip().lower()
-            for shortcut in (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
-            for part in shortcut.split("+")
-        }
+        reserved_shortcuts = canonical_global_shortcuts(
+            (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+        )
         for action in actions:
-            action.validate(reserved_keys)
+            action.validate(reserved_shortcuts)
 
         total_cycles = 0 if settings.repeat_forever else settings.repeat_count
         if progress:
@@ -356,7 +377,7 @@ class AutomationRunner:
                 for _ in range(action.repeats):
                     if stop_event.is_set():
                         return False
-                    if not self._execute_interruptibly(action, settings.text_key_interval, stop_event, reserved_keys):
+                    if not self._execute_interruptibly(action, settings.text_key_interval, stop_event, reserved_shortcuts):
                         return False
                     delay = self._jittered(action.delay_after, settings.delay_jitter)
                     if not interruptible_sleep(delay, stop_event):
@@ -383,12 +404,10 @@ def load_profile(path: str | Path) -> tuple[list[Action], RunSettings]:
         raise ValueError("Unsupported profile version.")
     settings = RunSettings(**payload.get("settings", {}))
     actions = [Action(**item) for item in payload.get("actions", [])]
-    reserved_keys = {
-        part.strip().lower()
-        for shortcut in (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
-        for part in shortcut.split("+")
-    }
-    for action in actions:
-        action.validate(reserved_keys)
     settings.validate()
+    reserved_shortcuts = canonical_global_shortcuts(
+        (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+    )
+    for action in actions:
+        action.validate(reserved_shortcuts)
     return actions, settings

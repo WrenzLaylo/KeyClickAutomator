@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 QML = (Path(__file__).parents[1] / "qml" / "Main.qml").read_text(encoding="utf-8")
+APP_BUTTON = (Path(__file__).parents[1] / "qml" / "components" / "AppButton.qml").read_text(encoding="utf-8")
 QT_APP = (Path(__file__).parents[1] / "qt_app.py").read_text(encoding="utf-8")
 CAPTURE_OVERLAY = (Path(__file__).parents[1] / "capture_overlay.py").read_text(encoding="utf-8")
 
@@ -13,8 +14,8 @@ def test_brand_uses_packaged_logo_instead_of_placeholder_monogram():
 
 
 def test_buttons_use_isolated_pointer_hover_state_and_stop_has_icon():
-    assert "property bool pointerHover" in QML
-    assert "control.pointerHover" in QML
+    assert "property bool pointerHover" in APP_BUTTON
+    assert "control.pointerHover" in APP_BUTTON
     assert 'objectName: "runStopButton"' in QML
     assert 'leading: "■"' in QML
 
@@ -54,9 +55,10 @@ def test_action_type_picker_uses_rounded_themed_popup():
 
 
 def test_animated_hover_surfaces_do_not_interpolate_from_transparent_black():
-    assert "component KButton: AbstractButton" in QML
+    assert "component KButton: Components.AppButton" in QML
+    assert "AbstractButton" in APP_BUTTON
     assert "component KButton: Button" not in QML
-    assert 'control.quiet ? "#00E5EAF2"' in QML
+    assert '? "#00E5EAF2"' in APP_BUTTON
     assert 'hover.hovered ? "#F4F7FF" : root.surface' in QML
     assert 'option.hovered ? "#F1F4F9" : "#00F1F4F9"' in QML
 

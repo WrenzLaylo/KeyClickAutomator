@@ -51,6 +51,22 @@ Installer build:
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" "installer.iss"
 ```
 
+If a trusted Windows code-signing certificate is configured, sign both `.exe`
+files now. Never describe a build as signed unless `Get-AuthenticodeSignature`
+reports `Valid` for that exact file.
+
+Generate the checksum manifest after any signing step so its hashes match the
+files users download:
+
+```powershell
+$files = Get-ChildItem release\KeyClickAutomator-*.exe | Sort-Object Name
+$lines = foreach ($file in $files) {
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+    "$hash *$($file.Name)"
+}
+$lines | Set-Content -Encoding ascii release\SHA256SUMS.txt
+```
+
 ## 5. Smoke-test and publish
 
 - Launch the portable `.exe` by itself.
@@ -84,7 +100,8 @@ Installer build:
 - Confirm **Change**, **Open file…**, `Ctrl+S`, and `Ctrl+Shift+S` update the profile
   folder and list as documented.
 - Confirm `F6`, `F8`, and `F9` match the Run inspector.
-- Record the SHA-256 hashes of both release files.
+- Verify the two entries in `SHA256SUMS.txt` against the final release files.
 - Commit the source and documentation together.
 - Create an annotated `vX.Y.Z` tag only after verification passes.
-- Push the branch and tag, then attach both `.exe` files and hashes to the release.
+- Push the branch and tag, then attach both `.exe` files and `SHA256SUMS.txt` to
+  the release.

@@ -6,6 +6,7 @@ from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtTest import QSignalSpy, QTest
 
 import qt_controller
+import profile_catalog
 from engine import Action, RunSettings, load_profile, save_profile
 from qt_controller import ActionListModel, AutomatorController
 from window_backend import WindowInfo
@@ -454,6 +455,21 @@ def test_reordered_duplicate_shortcuts_do_not_replace_known_good_settings():
     controller.shutdown()
 
 
+def test_global_shortcut_conflicts_identify_duplicate_fields_and_aliases():
+    controller = AutomatorController(start_hotkeys=False)
+
+    conflict = controller.globalShortcutConflicts("control+s", "s+ctrl", "f9")
+    assert conflict == {
+        "hasConflict": True,
+        "message": "Start / toggle and Record pointer cannot use the same shortcut (CTRL+S).",
+        "startConflict": True,
+        "captureConflict": True,
+        "stopConflict": False,
+    }
+    assert controller.globalShortcutConflicts("f6", "f8", "f9")["hasConflict"] is False
+    controller.shutdown()
+
+
 def test_open_profile_exposes_sequence_name_and_new_sequence_resets_it(monkeypatch, tmp_path):
     path = tmp_path / "Morning routine.kca.json"
     save_profile(path, [Action("key", value="a")], RunSettings())
@@ -579,8 +595,8 @@ def test_profile_folder_picker_refreshes_the_library(monkeypatch, tmp_path):
 
 def test_packaged_app_uses_the_executable_folder_as_its_profile_library(monkeypatch, tmp_path):
     executable = tmp_path / "KeyClickAutomator-Portable.exe"
-    monkeypatch.setattr(qt_controller.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(qt_controller.sys, "executable", str(executable))
+    monkeypatch.setattr(profile_catalog.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(profile_catalog.sys, "executable", str(executable))
 
     controller = AutomatorController(start_hotkeys=False)
 

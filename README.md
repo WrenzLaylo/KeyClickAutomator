@@ -5,6 +5,11 @@
 <h1 align="center">KeyClick Automator</h1>
 
 <p align="center">
+  <a href="https://github.com/WrenzLaylo/KeyClickAutomator/actions/workflows/windows-ci.yml"><img src="https://github.com/WrenzLaylo/KeyClickAutomator/actions/workflows/windows-ci.yml/badge.svg" alt="Windows CI status"></a>
+  <a href="https://github.com/WrenzLaylo/KeyClickAutomator/releases/latest"><img src="https://img.shields.io/github/v/release/WrenzLaylo/KeyClickAutomator" alt="Latest GitHub release"></a>
+</p>
+
+<p align="center">
   Build keyboard and mouse automation as a clear, visual sequence.<br>
   Made for Windows with Python, PySide6, and Qt Quick.
 </p>
@@ -18,6 +23,10 @@
 </p>
 
 > Current release: **3.4.1** · Windows 10/11 · 64-bit
+
+<p align="center">
+  <img src="assets/screenshots/keyclick-main.png" alt="KeyClick Automator showing a visual sequence and the Run inspector" width="1200">
+</p>
 
 ## Why KeyClick
 
@@ -52,6 +61,9 @@ runtime as a normal application folder.
 
 > The builds are currently unsigned, so Windows SmartScreen may show a warning.
 > Only run a file you built yourself or downloaded from a release you trust.
+
+Each GitHub release includes `SHA256SUMS.txt`. Use it to verify that a downloaded
+portable app or installer exactly matches the file published with that release.
 
 ## Quick start
 
@@ -239,7 +251,7 @@ No installation step is needed after the dependencies finish installing.
 ## Run the tests
 
 ```powershell
-.venv\Scripts\python.exe -m pip install pytest
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .venv\Scripts\python.exe -m pytest -q
 ```
 
@@ -269,18 +281,27 @@ Build the installer payload, then compile it with Inno Setup 6:
 Close any running release copy before rebuilding, and adjust the `ISCC.exe` path
 if Inno Setup was installed somewhere else.
 
+The Windows workflow runs the full test suite on every pull request and `main`
+push. Version tags and manual runs also build both packages and produce a
+`SHA256SUMS.txt` artifact.
+
 Before publishing, complete every check in [RELEASING.md](RELEASING.md).
 
 ## Project layout
 
 | Path | Purpose |
 | --- | --- |
-| `qml/Main.qml` | Desktop interface and animations |
-| `qt_controller.py` | UI model, profile actions, and run coordination |
+| `qml/Main.qml` | Desktop screens, layout, and interaction flow |
+| `qml/components/` | Shared button, field, and scrollbar styling |
+| `qt_controller.py` | UI model and run coordination |
+| `profile_catalog.py` | Saved-profile discovery and display metadata |
+| `recovery_store.py` | Atomic recovery-draft persistence |
+| `shortcut_service.py` | Shortcut conflicts and global-listener formatting |
 | `engine.py` | Automation actions, validation, timing, and execution |
 | `window_backend.py` | Windows target discovery and background message delivery |
 | `capture_overlay.py` | Frozen, dimmed multi-monitor pointer picker |
 | `tests/` | Controller, engine, QML, responsive, and release tests |
+| `.github/workflows/windows-ci.yml` | Windows tests, packaging, and checksums |
 | `KeyClickAutomator.spec` | Single-file portable build |
 | `KeyClickAutomatorInstaller.spec` | Multi-file installer payload |
 | `installer.iss` | Inno Setup configuration |

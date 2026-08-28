@@ -458,15 +458,44 @@ def test_compact_shortcuts_fit_their_dock_and_run_controls_are_balanced():
     start_button = window.findChild(QQuickItem, "runStartButton")
     progress = window.findChild(QQuickItem, "runProgressTrack")
     assert all(item is not None for item in (group, stop_button, start_button, progress))
-    assert stop_button.width() == start_button.width()
+    assert start_button.width() > stop_button.width()
     assert stop_button.height() == start_button.height()
     assert stop_button.property("keyHint") == "f9"
     assert start_button.property("keyHint") == "f6"
     assert start_button.isEnabled() is False
     assert progress.isVisible() is False
     controller.addAction({"kind": "key", "value": "space"})
+    controller.markRunSettingsPending()
     QTest.qWait(80)
     assert start_button.isEnabled() is True
+    assert start_button.property("text") == "Apply & start"
+    key_hint = window.findChild(QQuickItem, "runStartButton_keyHint")
+    assert key_hint is not None
+    hint_position = key_hint.mapToItem(start_button, QPointF(0, 0))
+    assert hint_position.x() >= 0
+    assert hint_position.x() + key_hint.width() <= start_button.width()
+    window.close()
+    controller.shutdown()
+
+
+def test_run_inspector_reserves_a_gutter_between_fields_and_scrollbar():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(1360)
+    window.setHeight(640)
+    window.setProperty("activeInspectorTab", 1)
+    _app.processEvents()
+    QTest.qWait(160)
+
+    flick = window.findChild(QQuickItem, "runSettingsFlick")
+    form = window.findChild(QQuickItem, "runSettingsForm")
+    scroll_bar = window.findChild(QQuickItem, "runSettingsScrollBar")
+    assert flick is not None and form is not None and scroll_bar is not None
+    form_position = form.mapToItem(flick, QPointF(0, 0))
+    scroll_position = scroll_bar.mapToItem(flick, QPointF(0, 0))
+    gutter = scroll_position.x() - (form_position.x() + form.width())
+    assert gutter >= 8
+
     window.close()
     controller.shutdown()
 
@@ -635,6 +664,52 @@ def test_recorded_global_shortcut_routes_to_the_correct_qml_field():
     controller.runSettingsChanged.emit()
     QTest.qWait(40)
     assert fields["capture"].property("text") == "f8"
+    window.close()
+    controller.shutdown()
+
+
+def test_duplicate_global_shortcuts_are_flagged_and_block_apply_and_start():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setProperty("activeInspectorTab", 1)
+    controller.addAction({"kind": "key", "value": "a"})
+    fields = {
+        name: window.findChild(QQuickItem, f"{name}HotkeyField")
+        for name in ("start", "capture", "stop")
+    }
+    message = window.findChild(QQuickItem, "shortcutConflictMessage")
+    apply_button = window.findChild(QQuickItem, "runSettingsApplyButton")
+    start_button = window.findChild(QQuickItem, "runStartButton")
+    assert all(field is not None for field in fields.values())
+    assert message is not None and apply_button is not None and start_button is not None
+    assert start_button.property("enabled") is True
+
+    controller.shortcutCaptured.emit("capture", "f6")
+    QTest.qWait(40)
+
+    assert fields["capture"].property("text") == "f8"
+    assert "cannot use the same shortcut (F6)" in message.property("text")
+    assert message.property("visible") is True
+
+    fields["capture"].setProperty("text", "f6")
+    QTest.qWait(40)
+
+    assert fields["start"].property("invalid") is True
+    assert fields["capture"].property("invalid") is True
+    assert fields["stop"].property("invalid") is False
+    assert message.property("visible") is True
+    assert "cannot use the same shortcut (F6)" in message.property("text")
+    assert apply_button.property("enabled") is False
+    assert start_button.property("enabled") is False
+
+    fields["capture"].setProperty("text", "f8")
+    QTest.qWait(40)
+
+    assert fields["start"].property("invalid") is False
+    assert fields["capture"].property("invalid") is False
+    assert message.property("visible") is False
+    assert apply_button.property("enabled") is True
+    assert start_button.property("enabled") is True
     window.close()
     controller.shutdown()
 

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import copy
-import json
 import os
-import sys
 import threading
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +26,27 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QFileDialog
 
 from capture_overlay import PositionCaptureOverlay
-from engine import HOTKEY_NAMED_KEYS, Action, AutomationRunner, RunSettings, load_profile, save_profile
+from engine import (
+    Action,
+    AutomationRunner,
+    RunSettings,
+    canonical_global_shortcuts,
+    load_profile,
+    save_profile,
+)
+from profile_catalog import (
+    default_profile_directory,
+    list_profile_entries,
+    normalize_path,
+    profile_name,
+)
+from recovery_store import (
+    describe_recovery_draft,
+    read_recovery_payload,
+    remove_recovery_draft,
+    write_recovery_draft,
+)
+from shortcut_service import global_shortcut_conflicts, pynput_hotkey
 from window_backend import (
     Win32WindowService,
     WindowInfo,
@@ -231,8 +248,8 @@ class AutomatorController(QObject):
         self._run_settings_pending = False
         self._current_profile_name = "Untitled sequence"
         self._current_profile_path: str | None = None
-        self._profile_directory = self._normalize_path(
-            profile_directory or self._default_profile_directory()
+        self._profile_directory = normalize_path(
+            profile_directory or default_profile_directory()
         )
         self._profile_entries: list[dict[str, Any]] = []
         self._profile_watcher = QFileSystemWatcher(self)
@@ -292,88 +309,15 @@ class AutomatorController(QObject):
     def profileEntries(self) -> list[dict[str, Any]]:
         return self._profile_entries
 
-    @staticmethod
-    def _normalize_path(path: str | Path) -> str:
-        return str(Path(path).expanduser().resolve())
-
-    @staticmethod
-    def _default_profile_directory() -> Path:
-        if getattr(sys, "frozen", False):
-            return Path(sys.executable).resolve().parent
-        return Path(__file__).resolve().parent
-
-    @staticmethod
-    def _profile_name(path: str | Path) -> str:
-        name = Path(path).name
-        if name.lower().endswith(".kca.json"):
-            return name[:-9]
-        if name.lower().endswith(".json"):
-            return name[:-5]
-        return name
-
-    @staticmethod
-    def _modified_label(timestamp: float) -> str:
-        modified = datetime.fromtimestamp(timestamp)
-        time_label = modified.strftime("%I:%M %p").lstrip("0")
-        today = datetime.now().date()
-        if modified.date() == today:
-            return f"Today · {time_label}"
-        return f"{modified.strftime('%b %d, %Y')} · {time_label}"
-
-    def _profile_entry(self, path: Path) -> dict[str, Any] | None:
-        try:
-            timestamp = path.stat().st_mtime
-        except OSError:
-            return None
-        entry: dict[str, Any] = {
-            "path": self._normalize_path(path),
-            "name": self._profile_name(path),
-            "actionCount": 0,
-            "activeCount": 0,
-            "modified": self._modified_label(timestamp),
-            "modifiedTimestamp": timestamp,
-            "valid": False,
-            "error": "",
-        }
-        try:
-            actions, _settings = load_profile(path)
-            entry["actionCount"] = len(actions)
-            entry["activeCount"] = sum(action.enabled for action in actions)
-            entry["valid"] = True
-        except (AttributeError, OSError, TypeError, ValueError) as exc:
-            # Plain JSON files may share the folder; only surface invalid files
-            # that explicitly use KeyClick's profile suffix.
-            if not path.name.lower().endswith(".kca.json"):
-                return None
-            entry["error"] = str(exc) or "This profile could not be read."
-        return entry
-
     @Slot()
     def refreshProfiles(self) -> None:
-        directory = Path(self._profile_directory)
-        entries: list[dict[str, Any]] = []
-        if directory.is_dir():
-            try:
-                candidates = [
-                    path
-                    for path in directory.iterdir()
-                    if path.is_file() and path.name.lower().endswith(".json")
-                ]
-            except OSError:
-                candidates = []
-            for path in candidates:
-                entry = self._profile_entry(path)
-                if entry is not None:
-                    entries.append(entry)
-        entries.sort(
-            key=lambda entry: (-float(entry["modifiedTimestamp"]), entry["name"].lower())
-        )
+        entries = list_profile_entries(self._profile_directory)
         if entries != self._profile_entries:
             self._profile_entries = entries
             self.profileEntriesChanged.emit()
 
     def _set_profile_directory(self, path: str | Path) -> bool:
-        normalized = self._normalize_path(path)
+        normalized = normalize_path(path)
         if not Path(normalized).is_dir():
             self.toast.emit("That profile folder is no longer available.", "error")
             return False
@@ -407,11 +351,11 @@ class AutomatorController(QObject):
         return bool(path) and self.setProfileDirectory(path)
 
     def _set_current_profile(self, path: str | None) -> None:
-        normalized = self._normalize_path(path) if path else None
+        normalized = normalize_path(path) if path else None
         if normalized != self._current_profile_path:
             self._current_profile_path = normalized
             self.currentProfilePathChanged.emit()
-        name = self._profile_name(normalized) if normalized else ""
+        name = profile_name(normalized) if normalized else ""
         name = name or "Untitled sequence"
         if name != self._current_profile_name:
             self._current_profile_name = name
@@ -690,14 +634,7 @@ class AutomatorController(QObject):
         return self._running_action_index
 
     def _describe_draft(self) -> str:
-        try:
-            payload = json.loads(self._recovery_path.read_text(encoding="utf-8"))
-            count = len(payload.get("actions", []))
-            name = str(payload.get("profile_name") or "Untitled sequence")
-            noun = "action" if count == 1 else "actions"
-            return f"{name} · {count} {noun}"
-        except (OSError, ValueError, TypeError):
-            return "A recovery copy from the previous session is available."
+        return describe_recovery_draft(self._recovery_path)
 
     def _set_draft_available(self, value: bool) -> None:
         value = bool(value)
@@ -710,18 +647,14 @@ class AutomatorController(QObject):
     def _write_recovery_draft(self) -> None:
         if not self._recovery_enabled:
             return
-        payload = {
-            "version": 1,
-            "profile_name": self._current_profile_name,
-            "profile_path": self._current_profile_path,
-            "actions": [asdict(action) for action in self.actions],
-            "settings": asdict(self._run_settings),
-        }
-        temporary = self._recovery_path.with_name(self._recovery_path.name + ".tmp")
         try:
-            self._recovery_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            temporary.replace(self._recovery_path)
+            write_recovery_draft(
+                self._recovery_path,
+                self.actions,
+                self._run_settings,
+                self._current_profile_name,
+                self._current_profile_path,
+            )
             self._set_draft_available(True)
         except OSError as exc:
             self.toast.emit(f"Recovery copy could not be saved: {exc}", "error")
@@ -730,8 +663,7 @@ class AutomatorController(QObject):
         if not self._recovery_enabled:
             return
         try:
-            self._recovery_path.unlink(missing_ok=True)
-            self._recovery_path.with_name(self._recovery_path.name + ".tmp").unlink(missing_ok=True)
+            remove_recovery_draft(self._recovery_path)
             self._set_draft_available(False)
         except OSError as exc:
             self.toast.emit(f"Recovery copy could not be removed: {exc}", "error")
@@ -868,7 +800,7 @@ class AutomatorController(QObject):
     def addAction(self, data: dict[str, Any]) -> bool:
         try:
             action = self._to_action(data)
-            action.validate(self._reserved_keys())
+            action.validate(self._reserved_shortcuts())
         except (ValueError, TypeError) as exc:
             self.toast.emit(str(exc), "error")
             return False
@@ -888,7 +820,7 @@ class AutomatorController(QObject):
         try:
             action = self._to_action(data)
             action.enabled = self.actions[index].enabled
-            action.validate(self._reserved_keys())
+            action.validate(self._reserved_shortcuts())
         except (ValueError, TypeError) as exc:
             self.toast.emit(str(exc), "error")
             return False
@@ -1028,6 +960,15 @@ class AutomatorController(QObject):
     def markRunSettingsPending(self) -> None:
         self._set_run_settings_pending(True)
 
+    @Slot(str, str, str, result="QVariantMap")
+    def globalShortcutConflicts(
+        self,
+        start_hotkey: str,
+        capture_hotkey: str,
+        stop_hotkey: str,
+    ) -> dict[str, Any]:
+        return global_shortcut_conflicts(start_hotkey, capture_hotkey, stop_hotkey)
+
     @Slot("QVariantMap", result=bool)
     def applyRunSettings(self, data: dict[str, Any]) -> bool:
         return self._apply_run_settings(data)
@@ -1066,14 +1007,11 @@ class AutomatorController(QObject):
         target_hwnd = 0
         try:
             settings.validate()
-            reserved_keys = {
-                part.strip().lower()
-                for shortcut in (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
-                for part in shortcut.split("+")
-                if part.strip()
-            }
+            reserved_shortcuts = canonical_global_shortcuts(
+                (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+            )
             for action in actions:
-                action.validate(reserved_keys)
+                action.validate(reserved_shortcuts)
             target_hwnd = self._prepare_run_target(actions, action_indices, settings)
         except (ValueError, WindowTargetError) as exc:
             self.toast.emit(str(exc), "error")
@@ -1419,16 +1357,22 @@ class AutomatorController(QObject):
     @Slot(str, str)
     def _on_shortcut_captured(self, target: str, value: str) -> None:
         self._capture_listener = None
-        self.toast.emit(f"Recorded {value.upper()}", "success")
         if self._hotkeys_enabled:
             self._restart_hotkeys()
+
+    @Slot(str, str)
+    def notifyShortcutCaptureResult(self, value: str, error_message: str) -> None:
+        if error_message:
+            self.toast.emit(error_message, "error")
+        else:
+            self.toast.emit(f"Recorded {value.upper()}", "success")
 
     @Slot(result=bool)
     def recoverDraft(self) -> bool:
         if not self._draft_available:
             return False
         try:
-            payload = json.loads(self._recovery_path.read_text(encoding="utf-8"))
+            payload = read_recovery_payload(self._recovery_path)
             actions, settings = load_profile(self._recovery_path)
             if self._hotkeys_enabled and not self._install_hotkeys(settings):
                 return False
@@ -1486,7 +1430,7 @@ class AutomatorController(QObject):
         return self._save_profile_path(path)
 
     def _save_profile_path(self, path: str | Path) -> bool:
-        normalized = self._normalize_path(path)
+        normalized = normalize_path(path)
         try:
             save_profile(normalized, self.actions, self._run_settings)
             self._set_profile_directory(Path(normalized).parent)
@@ -1516,7 +1460,7 @@ class AutomatorController(QObject):
         if self._running:
             self.toast.emit("Stop the current run before switching profiles.", "error")
             return False
-        normalized = self._normalize_path(path)
+        normalized = normalize_path(path)
         if not Path(normalized).is_file():
             self.toast.emit("That profile file is no longer available. Refresh the list.", "error")
             self.refreshProfiles()
@@ -1544,23 +1488,16 @@ class AutomatorController(QObject):
             self.toast.emit(str(exc), "error")
             return False
 
-    def _reserved_keys(self) -> set[str]:
-        return {
-            part.strip().lower()
-            for shortcut in (self._run_settings.start_hotkey, self._run_settings.capture_hotkey, self._run_settings.stop_hotkey)
-            for part in shortcut.split("+")
-            if part.strip()
-        }
+    def _reserved_shortcuts(self) -> set[str]:
+        return canonical_global_shortcuts((
+            self._run_settings.start_hotkey,
+            self._run_settings.capture_hotkey,
+            self._run_settings.stop_hotkey,
+        ))
 
     @staticmethod
     def _pynput_hotkey(value: str) -> str:
-        aliases = {"control": "ctrl", "escape": "esc", "return": "enter", "windows": "cmd", "win": "cmd"}
-        special = HOTKEY_NAMED_KEYS
-        formatted = []
-        for raw in value.lower().replace(" ", "").split("+"):
-            part = aliases.get(raw, raw)
-            formatted.append(f"<{part}>" if part in special or (part.startswith("f") and part[1:].isdigit()) else part)
-        return "+".join(formatted)
+        return pynput_hotkey(value)
 
     def _install_hotkeys(self, settings: RunSettings) -> bool:
         """Start a replacement before retiring known-good shortcuts."""

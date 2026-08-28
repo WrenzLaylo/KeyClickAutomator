@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import "components" as Components
 
 ApplicationWindow {
     id: root
@@ -22,6 +23,7 @@ ApplicationWindow {
     property int activeInspectorTab: 0
     property int editorIndex: -1
     property string shortcutRecordingTarget: ""
+    property string shortcutCaptureError: ""
     property string pendingDestructiveAction: ""
     property string pendingProfilePath: ""
     property bool closeConfirmed: false
@@ -216,99 +218,31 @@ ApplicationWindow {
         shadowHorizontalOffset: 0
     }
 
-    component KButton: AbstractButton {
-        id: control
-        property bool primary: false
-        property bool danger: false
-        property bool quiet: false
-        property bool activeNeutral: false
-        property string leading: ""
-        property string keyHint: ""
-        property bool pointerHover: false
-        implicitHeight: 42
-        implicitWidth: 112
-        padding: 12
-        hoverEnabled: true
-        HoverHandler {
-            onHoveredChanged: control.pointerHover = hovered
-        }
-        font.family: interSemiBold.name || root.font.family
-        font.pixelSize: 13
-        font.weight: Font.DemiBold
-        contentItem: Row {
-            spacing: 7
-            anchors.centerIn: parent
-            Text {
-                visible: control.leading !== ""
-                text: control.leading
-                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : root.ink) : root.ink3
-                font.family: interSemiBold.name || root.font.family
-                font.pixelSize: 15
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Text {
-                visible: control.text !== ""
-                text: control.text
-                color: control.enabled ? (control.primary ? "white" : control.danger ? root.red : root.ink) : root.ink3
-                font: control.font
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Rectangle {
-                visible: control.keyHint !== ""
-                width: visible ? Math.max(28, Math.min(42, keyHintLabel.implicitWidth + 12)) : 0
-                height: 22
-                radius: 7
-                color: !control.enabled ? "#DCE2EB" : control.primary ? "#30FFFFFF" : control.danger ? "#FFE5EA" : root.surface
-                border.width: 1
-                border.color: !control.enabled ? "#CDD4DF" : control.primary ? "#52FFFFFF" : control.danger ? "#F1BEC8" : root.line
-                anchors.verticalCenter: parent.verticalCenter
-                Text {
-                    id: keyHintLabel
-                    width: parent.width - 8
-                    anchors.centerIn: parent
-                    text: control.keyHint.toUpperCase()
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignHCenter
-                    color: !control.enabled ? root.ink3 : control.primary ? "white" : control.danger ? root.red : root.ink2
-                    font.family: interSemiBold.name || root.font.family
-                    font.pixelSize: 9
-                    font.letterSpacing: 0.3
-                }
-            }
-        }
-        background: Rectangle {
-            radius: 12
-            color: !control.enabled ? root.surface2
-                 : control.down ? (control.primary ? "#0049C9" : control.activeNeutral ? "#D5DBE5" : root.surface3)
-                 : control.pointerHover ? (control.primary ? root.primaryHover : control.danger ? "#FDECEF" : control.activeNeutral ? "#DCE1E9" : root.surface3)
-                 : control.primary ? root.primary : control.quiet ? "#00E5EAF2" : control.danger ? "#FFF2F4" : control.activeNeutral ? "#E1E6EE" : root.surface2
-            border.width: control.visualFocus ? 2 : control.activeNeutral ? 1 : 0
-            border.color: control.visualFocus ? root.primary : "#C7CED9"
-            scale: control.down ? 0.975 : 1
-            Behavior on color { ColorAnimation { duration: 130 } }
-            Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
-        }
+    component KButton: Components.AppButton {
+        buttonFontFamily: interSemiBold.name || root.font.family
+        inkColor: root.ink
+        secondaryInkColor: root.ink2
+        mutedInkColor: root.ink3
+        dangerColor: root.red
+        surfaceColor: root.surface
+        surface2Color: root.surface2
+        surface3Color: root.surface3
+        lineColor: root.line
+        primaryColor: root.primary
+        primaryHoverColor: root.primaryHover
     }
 
-    component KField: TextField {
-        id: field
-        implicitHeight: 44
-        leftPadding: 13
-        rightPadding: 13
-        selectByMouse: true
-        font.family: interMedium.name || root.font.family
-        font.pixelSize: 13
-        color: root.ink
-        placeholderTextColor: root.ink3
-        selectionColor: root.primary
-        background: Rectangle {
-            radius: 11
-            color: field.activeFocus ? "#FFFFFF" : "#F8F9FC"
-            border.width: field.activeFocus ? 2 : 1
-            border.color: field.activeFocus ? root.primary : root.line
-            Behavior on border.color { ColorAnimation { duration: 120 } }
-            Behavior on color { ColorAnimation { duration: 120 } }
-        }
+    component KScrollBar: Components.AppScrollBar {
+        pressedThumbColor: root.ink3
+    }
+
+    component KField: Components.AppField {
+        fieldFontFamily: interMedium.name || root.font.family
+        inkColor: root.ink
+        mutedInkColor: root.ink3
+        primaryColor: root.primary
+        dangerColor: root.red
+        lineColor: root.line
     }
 
     component FormLabel: Text {
@@ -1067,7 +1001,7 @@ ApplicationWindow {
                         Rectangle {
                             id: runControlGroup
                             objectName: "runControlGroup"
-                            Layout.preferredWidth: root.layoutMode === "compact" ? 244 : 260
+                            Layout.preferredWidth: root.layoutMode === "compact" ? 280 : 288
                             Layout.preferredHeight: 50
                             radius: 15
                             color: "#F3F6FA"
@@ -1079,7 +1013,7 @@ ApplicationWindow {
                                 spacing: 4
                                 KButton {
                                     objectName: "runStopButton"
-                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 112
                                     Layout.fillHeight: true
                                     text: "Stop"
                                     leading: "■"
@@ -1092,11 +1026,11 @@ ApplicationWindow {
                                     objectName: "runStartButton"
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    text: controller.running ? "Running" : controller.runSettingsPending ? "Apply & start" : "Start"
+                                    text: controller.running ? "Running" : runForm.shortcutValidation.hasConflict ? "Fix shortcuts" : controller.runSettingsPending ? "Apply & start" : "Start"
                                     leading: controller.running ? "●" : "▶"
                                     keyHint: controller.runSettings.startHotkey
                                     primary: true
-                                    enabled: !controller.running && controller.canRun && (controller.targetSettings.mode === "desktop" || controller.targetSettings.windowSelected)
+                                    enabled: !controller.running && controller.canRun && !runForm.shortcutValidation.hasConflict && (controller.targetSettings.mode === "desktop" || controller.targetSettings.windowSelected)
                                     onClicked: controller.startRunWithSettings(runForm.payload())
                                 }
                             }
@@ -1201,11 +1135,11 @@ ApplicationWindow {
                         contentHeight: editor.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: KScrollBar { objectName: "editorScrollBar" }
 
                         ColumnLayout {
                             id: editor
-                            width: editorFlick.width - 8
+                            width: editorFlick.width - 18
                             spacing: 7
                             enabled: !controller.running
                             property bool mouseAction: ["left_click", "right_click", "double_click", "middle_click", "scroll", "drag"].indexOf(kindValue()) >= 0
@@ -1523,12 +1457,15 @@ ApplicationWindow {
                         contentHeight: runForm.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: KScrollBar { objectName: "runSettingsScrollBar" }
                         ColumnLayout {
                             id: runForm
-                            width: runFlick.width - 8
+                            objectName: "runSettingsForm"
+                            width: runFlick.width - 18
                             spacing: 7
                             enabled: !controller.running
+                            readonly property var shortcutValidation: controller.globalShortcutConflicts(startHotkey.text, captureHotkey.text, stopHotkey.text)
+                            readonly property string shortcutMessage: shortcutValidation.hasConflict ? shortcutValidation.message : root.shortcutCaptureError
                             function payload() {
                                 return {repeatForever: foreverSwitch.checked, repeatCount: repeatCount.text, startDelay: startDelay.text, cycleInterval: cycleInterval.text, textInterval: textInterval.text, jitter: jitter.text, startHotkey: startHotkey.text, captureHotkey: captureHotkey.text, stopHotkey: stopHotkey.text}
                             }
@@ -1662,7 +1599,7 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Start / toggle"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
-                                KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey; onTextEdited: controller.markRunSettingsPending() }
+                                KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey; invalid: runForm.shortcutValidation.startConflict; validationMessage: invalid ? runForm.shortcutValidation.message : ""; onTextChanged: root.shortcutCaptureError = ""; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_start"
                                     implicitWidth: 106
@@ -1675,7 +1612,7 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Record pointer"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
-                                KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey; onTextEdited: controller.markRunSettingsPending() }
+                                KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey; invalid: runForm.shortcutValidation.captureConflict; validationMessage: invalid ? runForm.shortcutValidation.message : ""; onTextChanged: root.shortcutCaptureError = ""; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_capture"
                                     implicitWidth: 106
@@ -1688,7 +1625,7 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Emergency stop"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
-                                KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey; onTextEdited: controller.markRunSettingsPending() }
+                                KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey; invalid: runForm.shortcutValidation.stopConflict; validationMessage: invalid ? runForm.shortcutValidation.message : ""; onTextChanged: root.shortcutCaptureError = ""; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_stop"
                                     implicitWidth: 106
@@ -1698,7 +1635,18 @@ ApplicationWindow {
                                     onClicked: if (controller.recordGlobalShortcut("stop")) root.shortcutRecordingTarget = "stop"
                                 }
                             }
-                            KButton { Layout.fillWidth: true; Layout.topMargin: 8; primary: true; text: controller.runSettingsPending ? "Apply run settings" : "Run settings applied"; leading: controller.runSettingsPending ? "✓" : "●"; onClicked: runForm.apply() }
+                            Text {
+                                objectName: "shortcutConflictMessage"
+                                Layout.fillWidth: true
+                                visible: runForm.shortcutMessage.length > 0
+                                text: runForm.shortcutMessage
+                                color: root.red
+                                font.family: interSemiBold.name || root.font.family
+                                font.pixelSize: 11
+                                wrapMode: Text.WordWrap
+                                Accessible.name: text
+                            }
+                            KButton { objectName: "runSettingsApplyButton"; Layout.fillWidth: true; Layout.topMargin: 8; primary: true; enabled: !runForm.shortcutValidation.hasConflict; text: runForm.shortcutValidation.hasConflict ? "Choose different shortcuts" : controller.runSettingsPending ? "Apply run settings" : "Run settings applied"; leading: controller.runSettingsPending ? "✓" : "●"; onClicked: runForm.apply() }
                             Item { Layout.preferredHeight: 12 }
                         }
                     }
@@ -2547,11 +2495,23 @@ ApplicationWindow {
             valueField.text = value
         }
         function onShortcutCaptured(target, value) {
+            var proposed = controller.globalShortcutConflicts(
+                target === "start" ? value : startHotkey.text,
+                target === "capture" ? value : captureHotkey.text,
+                target === "stop" ? value : stopHotkey.text
+            )
+            root.shortcutRecordingTarget = ""
+            if (proposed.hasConflict) {
+                root.shortcutCaptureError = proposed.message
+                controller.notifyShortcutCaptureResult(value, proposed.message)
+                return
+            }
+            root.shortcutCaptureError = ""
             if (target === "start") startHotkey.text = value
             else if (target === "capture") captureHotkey.text = value
             else if (target === "stop") stopHotkey.text = value
-            root.shortcutRecordingTarget = ""
             controller.markRunSettingsPending()
+            controller.notifyShortcutCaptureResult(value, "")
         }
         function onRunSettingsChanged() {
             foreverSwitch.checked = controller.runSettings.repeatForever

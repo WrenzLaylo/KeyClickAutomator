@@ -58,6 +58,45 @@ def test_action_validation():
         Action("hotkey", value="ctrl+f8").validate()
 
 
+def test_action_type_validation_rejects_mismatched_key_shapes_before_running(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("engine.interruptible_sleep", lambda seconds, stop: sleeps.append(seconds) or True)
+    runner = AutomationRunner(FakeBackend())
+    settings = RunSettings(start_delay=3)
+
+    with pytest.raises(ValueError, match="key action accepts one key"):
+        runner.run([Action("key", value="ctrl+s")], settings, threading.Event())
+    with pytest.raises(ValueError, match="requires at least two keys"):
+        runner.run([Action("hotkey", value="a")], settings, threading.Event())
+
+    assert sleeps == []
+
+
+def test_custom_global_chord_reserves_only_the_complete_shortcut():
+    backend = FakeBackend()
+    runner = AutomationRunner(backend)
+    settings = RunSettings(
+        start_delay=0,
+        start_hotkey="ctrl+s",
+        capture_hotkey="f8",
+        stop_hotkey="f9",
+    )
+
+    assert runner.run(
+        [Action("hotkey", value="ctrl+c", delay_after=0)],
+        settings,
+        threading.Event(),
+    ) is True
+    assert backend.calls == [("hotkey", "ctrl", "c")]
+
+    with pytest.raises(ValueError, match=r"CTRL\+S is reserved"):
+        runner.run(
+            [Action("hotkey", value="s+control", delay_after=0)],
+            settings,
+            threading.Event(),
+        )
+
+
 def test_runner_executes_sequence_exact_number_of_times():
     backend = FakeBackend()
     runner = AutomationRunner(backend)

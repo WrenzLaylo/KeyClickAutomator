@@ -1,0 +1,96 @@
+name: Windows CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_CONTROLS_STYLE: Basic
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+  package:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build portable app
+        shell: pwsh
+        run: |
+          python -m PyInstaller --clean --noconfirm KeyClickAutomator.spec
+          $version = (Select-String -Path qt_controller.py -Pattern 'APP_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"').Matches.Groups[1].Value
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item dist\KeyClickAutomator.exe "release\KeyClickAutomator-Portable-$version.exe"
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          python -m PyInstaller --clean --noconfirm KeyClickAutomatorInstaller.spec
+          choco install innosetup --yes --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem release\KeyClickAutomator-*.exe | Sort-Object Name
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            "$hash *$($file.Name)"
+          }
+          $lines | Set-Content -Encoding ascii release\SHA256SUMS.txt
+
+      - name: Upload Windows builds
+        uses: actions/upload-artifact@v7
+        with:
+          name: KeyClickAutomator-Windows
+          path: |
+            release/KeyClickAutomator-*.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error

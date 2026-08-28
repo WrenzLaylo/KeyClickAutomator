@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://github.com/WrenzLaylo/KeyClickAutomator/actions/workflows/windows-ci.yml"><img src="https://github.com/WrenzLaylo/KeyClickAutomator/actions/workflows/windows-ci.yml/badge.svg" alt="Windows CI status"></a>
   <a href="https://github.com/WrenzLaylo/KeyClickAutomator/releases/latest"><img src="https://img.shields.io/github/v/release/WrenzLaylo/KeyClickAutomator" alt="Latest GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/WrenzLaylo/KeyClickAutomator" alt="MIT License"></a>
 </p>
 
 <p align="center">
@@ -305,6 +306,10 @@ Before publishing, complete every check in [RELEASING.md](RELEASING.md).
 | `KeyClickAutomator.spec` | Single-file portable build |
 | `KeyClickAutomatorInstaller.spec` | Multi-file installer payload |
 | `installer.iss` | Inno Setup configuration |
+
+## License
+
+KeyClick Automator is available under the [MIT License](LICENSE).
 
 ## Font license
 

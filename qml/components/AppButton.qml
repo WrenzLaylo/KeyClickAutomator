@@ -8,6 +8,7 @@ AbstractButton {
     property bool danger: false
     property bool quiet: false
     property bool activeNeutral: false
+    property bool hamburgerIcon: false
     property string leading: ""
     property string keyHint: ""
     property bool pointerHover: false
@@ -40,6 +41,28 @@ AbstractButton {
     contentItem: Row {
         spacing: 7
         anchors.centerIn: parent
+
+        Item {
+            visible: control.hamburgerIcon
+            width: visible ? 16 : 0
+            height: 14
+            anchors.verticalCenter: parent.verticalCenter
+
+            Repeater {
+                model: 3
+                Rectangle {
+                    required property int index
+                    x: 0
+                    y: 1 + index * 5
+                    width: 16
+                    height: 2
+                    radius: 1
+                    color: control.enabled
+                        ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
+                        : control.mutedInkColor
+                }
+            }
+        }
 
         Text {
             visible: control.leading !== ""

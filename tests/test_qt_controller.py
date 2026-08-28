@@ -314,6 +314,69 @@ def test_recorded_key_names_are_stable_for_character_and_special_keys():
     assert AutomatorController.keyName(keyboard.Key.space) == "space"
 
 
+def test_action_key_capture_is_cancelled_before_pointer_recording(monkeypatch):
+    listeners = []
+
+    class Listener:
+        def __init__(self, on_press=None, on_release=None):
+            self.on_press = on_press
+            self.on_release = on_release
+            self.stopped = False
+
+        def start(self):
+            listeners.append(self)
+
+        def stop(self):
+            self.stopped = True
+
+    monkeypatch.setattr(qt_controller.keyboard, "Listener", Listener)
+    controller = AutomatorController(start_hotkeys=False)
+
+    assert controller.recordActionKey() is True
+    assert controller.actionCaptureMode == "key"
+    assert controller.startPositionCapture(0) is True
+    assert listeners[-1].stopped is True
+    assert controller.actionCaptureMode == ""
+    assert controller.capturePending is True
+
+    controller.cancelPositionCapture(announce=False)
+    controller.shutdown()
+
+
+def test_action_hotkey_recorder_waits_for_a_modifier_combination(monkeypatch):
+    listeners = []
+
+    class Listener:
+        def __init__(self, on_press=None, on_release=None):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self):
+            listeners.append(self)
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(qt_controller.keyboard, "Listener", Listener)
+    controller = AutomatorController(start_hotkeys=False)
+    captured = QSignalSpy(controller.actionHotkeyCaptured)
+
+    assert controller.recordActionHotkey() is True
+    listener = listeners[-1]
+    assert controller.actionCaptureMode == "hotkey"
+    assert listener.on_press(keyboard.KeyCode.from_char("a")) is None
+    assert captured.count() == 0
+    assert controller.actionCaptureMode == "hotkey"
+    assert listener.on_press(keyboard.Key.ctrl_l) is None
+    assert listener.on_press(keyboard.Key.shift) is None
+    assert listener.on_press(keyboard.KeyCode.from_char("s")) is False
+
+    assert captured.count() == 1
+    assert captured.at(0) == ["ctrl+shift+s"]
+    assert controller.actionCaptureMode == ""
+    controller.shutdown()
+
+
 def test_global_shortcut_recorder_captures_modifier_combination_without_applying(monkeypatch):
     listeners = []
 

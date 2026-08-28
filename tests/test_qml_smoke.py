@@ -77,6 +77,25 @@ def test_inspector_tab_selection_pill_slides_between_tabs():
     controller.shutdown()
 
 
+def test_header_status_badge_aligns_with_the_sequence_heading():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(1360)
+    window.setHeight(840)
+    _app.processEvents()
+
+    heading = window.findChild(QQuickItem, "sequenceHeading")
+    status = window.findChild(QQuickItem, "headerStatusBadge")
+    assert heading is not None and status is not None
+    heading_position = heading.mapToScene(QPointF(0, 0))
+    status_position = status.mapToScene(QPointF(0, 0))
+    assert abs(status_position.y() - heading_position.y()) < 0.1
+    assert status.height() == heading.height()
+
+    window.close()
+    controller.shutdown()
+
+
 def test_workspace_navigation_hover_state_is_isolated_per_button():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
@@ -282,9 +301,9 @@ def test_unsaved_dialog_actions_are_grouped_and_contained_in_the_modal():
     discard_position = discard.mapToScene(QPointF(0, 0))
     save_position = save.mapToScene(QPointF(0, 0))
 
-    assert abs(cancel.width() - 88) < 0.1
-    assert abs(discard.width() - 96) < 0.1
-    assert abs(save.width() - 168) < 0.1
+    assert abs(cancel.width() - discard.width()) <= 1
+    assert abs(discard.width() - save.width()) <= 1
+    assert cancel.height() == discard.height() == save.height() == 44
     assert abs(cancel_position.y() - discard_position.y()) < 0.1
     assert abs(discard_position.y() - save_position.y()) < 0.1
     assert cancel_position.x() >= background_position.x() + 20
@@ -500,6 +519,42 @@ def test_run_inspector_reserves_a_gutter_between_fields_and_scrollbar():
     controller.shutdown()
 
 
+def test_scrollbars_hide_without_overflow_and_sequence_cards_keep_a_gutter():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(1360)
+    window.setHeight(840)
+    controller.addAction({"kind": "left_click", "x": 0, "y": 0})
+    _app.processEvents()
+    QTest.qWait(80)
+
+    editor_scrollbar = window.findChild(QQuickItem, "editorScrollBar")
+    sequence_scrollbar = window.findChild(QQuickItem, "sequenceScrollBar")
+    action_list = window.findChild(QQuickItem, "actionList")
+    assert all(item is not None for item in (editor_scrollbar, sequence_scrollbar, action_list))
+    assert editor_scrollbar.property("size") == 1
+    assert editor_scrollbar.isVisible() is False
+    assert sequence_scrollbar.isVisible() is False
+
+    window.setWidth(900)
+    window.setHeight(640)
+    for _ in range(11):
+        controller.addAction({"kind": "left_click", "x": 0, "y": 0})
+    _app.processEvents()
+    QTest.qWait(80)
+
+    assert sequence_scrollbar.isVisible() is True
+    assert sequence_scrollbar.property("size") < 1
+    first_surface = visual_children_named(window.contentItem(), "actionCardSurface")[0]
+    surface_position = first_surface.mapToItem(action_list, QPointF(0, 0))
+    scrollbar_position = sequence_scrollbar.mapToItem(action_list, QPointF(0, 0))
+    gutter = scrollbar_position.x() - (surface_position.x() + first_surface.width())
+    assert gutter >= 7.9
+
+    window.close()
+    controller.shutdown()
+
+
 def test_create_first_action_button_opens_the_editor_without_inserting_a_default():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
@@ -578,6 +633,86 @@ def test_record_pointer_button_arms_a_frozen_picker_until_a_point_is_clicked(mon
     controller.shutdown()
 
 
+def test_changing_action_type_cancels_key_recording_and_unblocks_pointer_picker(monkeypatch):
+    listeners = []
+
+    class Listener:
+        def __init__(self, on_press=None, on_release=None):
+            self.on_press = on_press
+            self.on_release = on_release
+            self.stopped = False
+
+        def start(self):
+            listeners.append(self)
+
+        def stop(self):
+            self.stopped = True
+
+    monkeypatch.setattr(qt_controller.keyboard, "Listener", Listener)
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    picker = window.findChild(QQuickItem, "actionTypePicker")
+    key_record = window.findChild(QQuickItem, "recordActionKey")
+    pointer_record = window.findChild(QQuickItem, "recordPointerPosition")
+    assert all(item is not None for item in (picker, key_record, pointer_record))
+
+    QMetaObject.invokeMethod(key_record, "click", Qt.DirectConnection)
+    assert controller.actionCaptureMode == "key"
+    picker.setProperty("currentIndex", 3)
+    _app.processEvents()
+    QTest.qWait(40)
+
+    assert listeners[-1].stopped is True
+    assert controller.actionCaptureMode == ""
+    assert pointer_record.isEnabled() is True
+    QMetaObject.invokeMethod(pointer_record, "click", Qt.DirectConnection)
+    QTest.qWait(30)
+    assert controller.capturePending is True
+
+    controller.cancelPositionCapture(announce=False)
+    window.close()
+    controller.shutdown()
+
+
+def test_hotkey_action_has_a_recorder_that_populates_the_action_field(monkeypatch):
+    listeners = []
+
+    class Listener:
+        def __init__(self, on_press=None, on_release=None):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self):
+            listeners.append(self)
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(qt_controller.keyboard, "Listener", Listener)
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    picker = window.findChild(QQuickItem, "actionTypePicker")
+    recorder = window.findChild(QQuickItem, "recordActionHotkey")
+    value_field = window.findChild(QQuickItem, "actionValueField")
+    assert all(item is not None for item in (picker, recorder, value_field))
+
+    picker.setProperty("currentIndex", 1)
+    _app.processEvents()
+    QMetaObject.invokeMethod(recorder, "click", Qt.DirectConnection)
+    assert controller.actionCaptureMode == "hotkey"
+    assert recorder.property("text") == "Cancel hotkey recording"
+    listener = listeners[-1]
+    assert listener.on_press(qt_controller.keyboard.Key.ctrl_l) is None
+    assert listener.on_press(qt_controller.keyboard.KeyCode.from_char("s")) is False
+    QTest.qWait(40)
+
+    assert controller.actionCaptureMode == ""
+    assert value_field.property("text") == "ctrl+s"
+    assert recorder.property("text") == "Record hotkey"
+    window.close()
+    controller.shutdown()
+
+
 def test_start_button_discloses_when_visible_run_settings_will_be_applied():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
@@ -644,6 +779,46 @@ def test_window_picker_shows_desktop_and_open_app_choices():
     QTest.qWait(220)
     assert controller.targetSettings["displayName"] == "Daily meeting - Google Meet"
     assert dialog.property("opened") is False
+    window.close()
+    controller.shutdown()
+
+
+def test_window_picker_fast_scroll_is_bounded_to_real_content():
+    service = PickerWindowService()
+    service.windows = [
+        WindowInfo(
+            2000 + index,
+            f"Window {index}",
+            "Chrome_WidgetWin_1",
+            rf"C:\\Apps\\App{index}.exe",
+            100 + index,
+        )
+        for index in range(12)
+    ]
+    engine, controller = build_engine(start_hotkeys=False, window_service=service)
+    window = engine.rootObjects()[0]
+    window.setWidth(900)
+    window.setHeight(640)
+    window.setProperty("activeInspectorTab", 1)
+    background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
+    scroll = window.findChild(QQuickItem, "windowPickerScroll")
+    scrollbar = window.findChild(QQuickItem, "windowPickerScrollBar")
+    dialog = window.findChild(QObject, "windowPickerDialog")
+    assert all(item is not None for item in (background_mode, scroll, scrollbar, dialog))
+
+    QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
+    QTest.qWait(120)
+    maximum_y = scroll.property("contentHeight") - scroll.height()
+    assert dialog.property("opened") is True
+    assert maximum_y > 0
+    assert scrollbar.isVisible() is True
+
+    scroll.setProperty("contentY", maximum_y + 500)
+    QMetaObject.invokeMethod(scroll, "returnToBounds", Qt.DirectConnection)
+    QTest.qWait(600)
+    assert scroll.property("contentY") <= maximum_y + 1
+
+    QMetaObject.invokeMethod(dialog, "close", Qt.DirectConnection)
     window.close()
     controller.shutdown()
 

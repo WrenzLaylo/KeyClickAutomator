@@ -3,6 +3,7 @@ from pathlib import Path
 
 QML = (Path(__file__).parents[1] / "qml" / "Main.qml").read_text(encoding="utf-8")
 APP_BUTTON = (Path(__file__).parents[1] / "qml" / "components" / "AppButton.qml").read_text(encoding="utf-8")
+APP_SCROLLBAR = (Path(__file__).parents[1] / "qml" / "components" / "AppScrollBar.qml").read_text(encoding="utf-8")
 QT_APP = (Path(__file__).parents[1] / "qt_app.py").read_text(encoding="utf-8")
 CAPTURE_OVERLAY = (Path(__file__).parents[1] / "capture_overlay.py").read_text(encoding="utf-8")
 
@@ -117,6 +118,14 @@ def test_pointer_recording_uses_a_cancellable_frozen_screen_picker():
     assert "Click to record" in CAPTURE_OVERLAY
 
 
+def test_action_key_and_hotkey_recorders_are_visible_and_cancellable():
+    assert 'objectName: "recordActionKey"' in QML
+    assert 'objectName: "recordActionHotkey"' in QML
+    assert "controller.recordActionHotkey()" in QML
+    assert "controller.cancelActionCapture()" in QML
+    assert 'function onActionHotkeyCaptured(value)' in QML
+
+
 def test_click_actions_offer_live_pointer_targeting():
     assert 'objectName: "followPointerSwitch"' in QML
     assert 'text: "Follow current pointer"' in QML
@@ -133,7 +142,7 @@ def test_safe_editing_controls_cover_recovery_undo_and_targeted_runs():
     assert 'objectName: "unsavedCancelButton"' in QML
     assert 'objectName: "unsavedDiscardButton"' in QML
     assert 'objectName: "unsavedSaveButton"' in QML
-    assert "Layout.preferredWidth: 168" in QML
+    assert QML.count("implicitHeight: 44") >= 4
     assert 'objectName: "undoDeleteButton"' in QML
     assert 'objectName: "testActionButton"' in QML
     assert 'objectName: "runFromHereButton"' in QML
@@ -152,6 +161,10 @@ def test_in_app_profile_library_supports_switching_and_folder_management():
     assert "root.requestProfileOpen(modelData.path)" in QML
     assert 'sequence: "Ctrl+O"' in QML
     assert 'sequence: "Ctrl+Shift+S"' in QML
+    assert 'objectName: "profileLibraryScrollBar"' in QML
+    assert "property bool hamburgerIcon" in APP_BUTTON
+    assert "hamburgerIcon: true" in QML
+    assert 'text: "Refresh"' in QML
 
 
 def test_sequence_actions_support_pointer_dragging_and_button_reordering():
@@ -164,6 +177,23 @@ def test_sequence_actions_support_pointer_dragging_and_button_reordering():
     assert "controller.moveAction(controller.selectedIndex, -1)" in QML
     assert "controller.moveAction(controller.selectedIndex, 1)" in QML
     assert "visible: actionCard.actionIndex < actionList.count - 1" in QML
+    assert "transform: Translate { y: reorderDrag.active ? reorderDrag.translation.y : 0 }" in QML
+
+
+def test_scrollbars_only_render_for_overflow_and_lists_reserve_a_gutter():
+    assert "size < 0.999" in APP_SCROLLBAR
+    assert "interactive: visible" in APP_SCROLLBAR
+    assert 'objectName: "sequenceScrollBar"' in QML
+    assert "sequenceScrollBar.visible ? sequenceScrollBar.width + 8 : 0" in QML
+    assert "profileScrollBar.visible ? profileScrollBar.width + 8 : 0" in QML
+    assert 'objectName: "windowPickerScrollBar"' in QML
+
+
+def test_window_picker_uses_a_bounded_overlay_flick_area():
+    assert "parent: Overlay.overlay" in QML
+    assert "id: windowPickerScroll" in QML
+    assert "boundsBehavior: Flickable.StopAtBounds" in QML
+    assert "windowPickerScroll.returnToBounds()" in QML
 
 
 def test_background_window_targeting_discloses_picker_and_compatibility_limits():

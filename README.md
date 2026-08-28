@@ -23,7 +23,7 @@
   <a href="#build-a-release">Build a release</a>
 </p>
 
-> Current release: **3.4.2** · Windows 10/11 · 64-bit
+> Current release: **3.4.3** · Windows 10/11 · 64-bit
 
 <p align="center">
   <img src="assets/screenshots/keyclick-main.png" alt="KeyClick Automator showing a visual sequence and the Run inspector" width="1200">
@@ -53,8 +53,8 @@ and stop the automation immediately whenever you need to.
 
 | Build | Best for | What you need |
 | --- | --- | --- |
-| `KeyClickAutomator-Portable-3.4.2.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
-| `KeyClickAutomator-Setup-3.4.2.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
+| `KeyClickAutomator-Portable-3.4.3.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
+| `KeyClickAutomator-Setup-3.4.3.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
 
 Both builds are created in the `release` folder. The portable build is one
 standalone file. The setup download is smaller because it installs the bundled
@@ -186,7 +186,20 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - A deleted action can be restored with **Undo** or `Ctrl+Z`.
 - Profiles created by earlier 3.x releases remain compatible.
 
-## What's new in 3.4.2
+## What's new in 3.4.3
+
+- Scrollbars now appear only when content overflows, and long sequence and profile
+  lists reserve a clear gutter so cards never sit beneath the scroll thumb
+- The window picker stays bounded during fast scrolling and keeps its content,
+  Refresh action, and Close action stable and visible
+- Profile controls, the Ready badge, and the unsaved-changes dialog now use a
+  cleaner, more consistent button hierarchy and alignment
+- Changing action type or selection cancels an active key recording immediately,
+  so pointer recording is never blocked by a stale listener
+- Hotkey actions now include a dedicated recorder that waits for a modifier-plus-key
+  combination, and card dragging keeps the numbered timeline anchored until drop
+
+### Previous release: 3.4.2
 
 - Custom global shortcuts now reserve the complete chord instead of every
   individual key, so a Start shortcut such as `Ctrl+S` no longer blocks an
@@ -199,7 +212,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - Windows CI, an actual application screenshot, MIT licensing, and downloadable
   SHA-256 manifests make source and release verification easier
 
-### Previous release: 3.4.1
+### Earlier release: 3.4.1
 
 - Background messages are rate-limited and the target is checked for responsiveness
   throughout a run, preventing zero-delay sequences from flooding its message queue
@@ -208,23 +221,11 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - Large native text inserts are split into bounded chunks, and control-specific
   commands are sent only to genuine standard Windows button and edit controls
 
-### Earlier release: 3.4.0
-
-- A visual target picker shows Desktop and open app windows with previews, names,
-  selected state, refresh, and clear handling for minimized windows
-- Pointer recording now hides KeyClick and opens a frozen, dimmed desktop overlay;
-  click once to choose the exact point, or press `Esc` to cancel
-- Background-window mouse positions store their reference content size and scale
-  clicks, scrolling, and both drag endpoints whenever the target is resized
-- Drag-to-reorder now moves only the action card while the numbered timeline and
-  connector remain anchored in place
-- The unsaved-changes dialog now uses contained, balanced Cancel, Discard, and
-  Save actions that stay inside the modal at the minimum window size
-
 ## Release history
 
 | Version | Summary |
 | --- | --- |
+| 3.4.3 | Overflow-only scrolling, stable window picking, recorder handoff, and UI polish |
 | 3.4.2 | Complete-chord shortcut safety, earlier validation, UI containment, and project polish |
 | 3.4.1 | Safer paced background delivery with responsiveness and queue-flood protection |
 | 3.4.0 | Visual window picker, frozen point capture, and resize-aware window positions |
@@ -276,7 +277,7 @@ Build the single-file portable app:
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller --clean --noconfirm KeyClickAutomator.spec
 New-Item -ItemType Directory -Force release | Out-Null
-Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.2.exe
+Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.3.exe
 ```
 
 Build the installer payload, then compile it with Inno Setup 6:

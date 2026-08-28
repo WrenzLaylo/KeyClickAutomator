@@ -56,7 +56,7 @@ from window_backend import (
 )
 
 
-APP_VERSION = "3.4.2"
+APP_VERSION = "3.4.3"
 
 
 class ActionListModel(QAbstractListModel):
@@ -206,6 +206,7 @@ class AutomatorController(QObject):
     draftAvailableChanged = Signal()
     undoChanged = Signal()
     captureStateChanged = Signal()
+    actionCaptureStateChanged = Signal()
     targetSettingsChanged = Signal()
     windowPickStateChanged = Signal()
     windowEntriesChanged = Signal()
@@ -213,6 +214,7 @@ class AutomatorController(QObject):
     toast = Signal(str, str)
     positionCaptured = Signal(int, int, int, str, int, int)
     actionKeyCaptured = Signal(str)
+    actionHotkeyCaptured = Signal(str)
     shortcutCaptured = Signal(str, str)
     progressFromWorker = Signal(str, int, int)
     finishedFromWorker = Signal(bool, str)
@@ -244,6 +246,7 @@ class AutomatorController(QObject):
         self._worker: threading.Thread | None = None
         self._listener: keyboard.GlobalHotKeys | None = None
         self._capture_listener: keyboard.Listener | None = None
+        self._action_capture_mode = ""
         self._run_settings = RunSettings()
         self._run_settings_pending = False
         self._current_profile_name = "Untitled sequence"
@@ -285,6 +288,7 @@ class AutomatorController(QObject):
         self.hotkeyCaptureRequested.connect(lambda: self.startPositionCapture(0))
         self.hotkeyStopRequested.connect(self.stopRun)
         self.actionKeyCaptured.connect(self._on_action_key_captured)
+        self.actionHotkeyCaptured.connect(self._on_action_hotkey_captured)
         self.shortcutCaptured.connect(self._on_shortcut_captured)
         if start_hotkeys:
             self._restart_hotkeys()
@@ -396,6 +400,10 @@ class AutomatorController(QObject):
     @Property(int, notify=captureStateChanged)
     def captureTarget(self) -> int:
         return self._capture_target
+
+    @Property(str, notify=actionCaptureStateChanged)
+    def actionCaptureMode(self) -> str:
+        return self._action_capture_mode
 
     @Property(bool, notify=windowPickStateChanged)
     def windowPickPending(self) -> bool:
@@ -586,6 +594,7 @@ class AutomatorController(QObject):
             return False
         if normalized == self._run_settings.target_mode:
             return True
+        self._cancel_action_capture(announce=False)
         self.cancelPositionCapture(announce=False)
         self.cancelWindowPick(announce=False)
         self._run_settings.target_mode = normalized
@@ -604,6 +613,7 @@ class AutomatorController(QObject):
         if self._running:
             self.toast.emit("Stop the automation before choosing a target window.", "error")
             return False
+        self._cancel_action_capture(announce=False)
         if self._capture_listener is not None:
             self.toast.emit("Finish recording the current key or shortcut first.", "error")
             return False
@@ -1176,6 +1186,7 @@ class AutomatorController(QObject):
         if self._running:
             self.toast.emit("Stop the automation before recording a pointer position.", "error")
             return False
+        self._cancel_action_capture(announce=False)
         if self._capture_listener is not None:
             self.toast.emit("Finish recording the current key or shortcut first.", "error")
             return False
@@ -1279,30 +1290,126 @@ class AutomatorController(QObject):
             return key.char.lower()
         return getattr(key, "name", str(key).replace("Key.", "")).lower()
 
-    @Slot()
-    def recordActionKey(self) -> None:
-        if self._capture_listener is not None:
+    def _set_action_capture_mode(self, mode: str) -> None:
+        if self._action_capture_mode == mode:
             return
+        self._action_capture_mode = mode
+        self.actionCaptureStateChanged.emit()
+
+    def _prepare_action_capture(self, mode: str, prompt: str) -> bool:
+        if self._capture_listener is not None:
+            return False
         self.cancelPositionCapture(announce=False)
         self.cancelWindowPick(announce=False)
         if self._listener:
             self._listener.stop()
             self._listener = None
-        self.toast.emit("Press the key you want to record", "neutral")
+        self._set_action_capture_mode(mode)
+        self.toast.emit(prompt, "neutral")
+        return True
+
+    def _action_capture_failed(self, message: str) -> None:
+        self._capture_listener = None
+        self._set_action_capture_mode("")
+        self.toast.emit(message, "error")
+        if self._hotkeys_enabled:
+            self._restart_hotkeys()
+
+    @Slot(result=bool)
+    def recordActionKey(self) -> bool:
+        if not self._prepare_action_capture("key", "Press the key you want to record"):
+            return False
 
         def on_press(key) -> bool:
             self.actionKeyCaptured.emit(self.keyName(key))
             return False
 
-        self._capture_listener = keyboard.Listener(on_press=on_press)
-        self._capture_listener.start()
+        try:
+            self._capture_listener = keyboard.Listener(on_press=on_press)
+            self._capture_listener.start()
+        except Exception as exc:
+            self._action_capture_failed(f"Key recorder error: {exc}")
+            return False
+        return True
 
-    @Slot(str)
-    def _on_action_key_captured(self, value: str) -> None:
+    @Slot(result=bool)
+    def recordActionHotkey(self) -> bool:
+        if not self._prepare_action_capture(
+            "hotkey", "Hold a modifier, then press the hotkey you want to record"
+        ):
+            return False
+        modifiers: set[str] = set()
+
+        def on_press(key) -> bool | None:
+            modifier = self._shortcut_modifier(key)
+            if modifier:
+                modifiers.add(modifier)
+                return None
+            ordered = [
+                name
+                for name in ("ctrl", "alt", "shift", "cmd", "alt_gr")
+                if name in modifiers
+            ]
+            if not ordered:
+                self.toast.emit(
+                    "A Hotkey needs Ctrl, Alt, Shift, or Win plus another key.",
+                    "error",
+                )
+                return None
+            self.actionHotkeyCaptured.emit(
+                "+".join([*ordered, self.keyName(key)])
+            )
+            return False
+
+        def on_release(key) -> None:
+            modifier = self._shortcut_modifier(key)
+            if modifier:
+                modifiers.discard(modifier)
+
+        try:
+            self._capture_listener = keyboard.Listener(
+                on_press=on_press, on_release=on_release
+            )
+            self._capture_listener.start()
+        except Exception as exc:
+            self._action_capture_failed(f"Hotkey recorder error: {exc}")
+            return False
+        return True
+
+    def _finish_action_capture(self, mode: str, value: str) -> None:
+        if self._action_capture_mode != mode:
+            return
         self._capture_listener = None
+        self._set_action_capture_mode("")
         self.toast.emit(f"Recorded {value.upper()}", "success")
         if self._hotkeys_enabled:
             self._restart_hotkeys()
+
+    @Slot(str)
+    def _on_action_key_captured(self, value: str) -> None:
+        self._finish_action_capture("key", value)
+
+    @Slot(str)
+    def _on_action_hotkey_captured(self, value: str) -> None:
+        self._finish_action_capture("hotkey", value)
+
+    def _cancel_action_capture(self, announce: bool) -> bool:
+        if self._action_capture_mode not in {"key", "hotkey"}:
+            return False
+        listener = self._capture_listener
+        self._capture_listener = None
+        if listener is not None:
+            listener.stop()
+        self._set_action_capture_mode("")
+        if self._hotkeys_enabled:
+            self._restart_hotkeys()
+        if announce:
+            self.toast.emit("Action input recording cancelled", "neutral")
+        return True
+
+    @Slot(result=bool)
+    def cancelActionCapture(self) -> bool:
+        return self._cancel_action_capture(announce=True)
 
     @staticmethod
     def _shortcut_modifier(key: keyboard.Key | keyboard.KeyCode) -> str | None:
@@ -1535,6 +1642,7 @@ class AutomatorController(QObject):
         if self._capture_listener:
             self._capture_listener.stop()
             self._capture_listener = None
+        self._action_capture_mode = ""
         if self._listener:
             self._listener.stop()
             self._listener = None

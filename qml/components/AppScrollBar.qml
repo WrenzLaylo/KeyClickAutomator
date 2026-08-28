@@ -8,6 +8,9 @@ ScrollBar {
     property color pressedThumbColor: "#7B8494"
 
     policy: ScrollBar.AsNeeded
+    visible: policy === ScrollBar.AlwaysOn
+             || (policy === ScrollBar.AsNeeded && size < 0.999)
+    interactive: visible
     implicitWidth: 10
     padding: 2
     background: Item {}

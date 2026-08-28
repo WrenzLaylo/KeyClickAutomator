@@ -54,6 +54,10 @@ ApplicationWindow {
     font.family: interRegular.name || "Segoe UI"
 
     Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+    onActiveInspectorTabChanged: {
+        if (activeInspectorTab !== 0 && controller.actionCaptureMode !== "")
+            controller.cancelActionCapture()
+    }
     Component.onCompleted: {
         opacity = 1
         if (controller.draftAvailable)
@@ -71,6 +75,8 @@ ApplicationWindow {
     }
 
     function beginNewAction() {
+        if (controller.actionCaptureMode !== "")
+            controller.cancelActionCapture()
         if (controller.capturePending)
             controller.cancelPositionCapture()
         if (controller.windowPickPending)
@@ -123,6 +129,8 @@ ApplicationWindow {
     function requestDestructiveAction(action) {
         if (action !== "profile")
             root.pendingProfilePath = ""
+        if (controller.actionCaptureMode !== "")
+            controller.cancelActionCapture()
         if (controller.capturePending)
             controller.cancelPositionCapture()
         if (controller.windowPickPending)
@@ -143,8 +151,8 @@ ApplicationWindow {
     function openWindowPicker() {
         if (controller.running)
             return
-        controller.startWindowPick()
-        windowPickerDialog.open()
+        if (controller.startWindowPick())
+            windowPickerDialog.open()
     }
 
     function closeWindowPicker() {
@@ -199,8 +207,13 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Esc"
-        enabled: controller.capturePending
-        onActivated: controller.cancelPositionCapture()
+        enabled: controller.capturePending || controller.actionCaptureMode !== ""
+        onActivated: {
+            if (controller.capturePending)
+                controller.cancelPositionCapture()
+            else
+                controller.cancelActionCapture()
+        }
     }
 
     function toneColor(tone) {
@@ -498,6 +511,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 3
                         Text {
+                            objectName: "sequenceHeading"
                             text: "Sequence builder"
                             color: root.ink
                             font.family: interBold.name || root.font.family
@@ -512,6 +526,9 @@ ApplicationWindow {
                         }
                     }
                     Rectangle {
+                        objectName: "headerStatusBadge"
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: 8
                         implicitWidth: statusRow.implicitWidth + 22
                         implicitHeight: 34
                         radius: 11
@@ -659,7 +676,10 @@ ApplicationWindow {
                         clip: true
                         model: controller.actionModel
                         boundsBehavior: Flickable.StopAtBounds
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: KScrollBar {
+                            id: sequenceScrollBar
+                            objectName: "sequenceScrollBar"
+                        }
                         move: Transition {
                             NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
                         }
@@ -675,6 +695,7 @@ ApplicationWindow {
                             required property int actionIndex
                             required property string actionIcon
                             width: ListView.view.width
+                                   - (sequenceScrollBar.visible ? sequenceScrollBar.width + 8 : 0)
                             height: 76
                             color: "transparent"
                             border.width: 0
@@ -745,6 +766,8 @@ ApplicationWindow {
                                 id: tap
                                 enabled: !controller.running
                                 onTapped: {
+                                    if (controller.actionCaptureMode !== "")
+                                        controller.cancelActionCapture()
                                     if (controller.capturePending)
                                         controller.cancelPositionCapture()
                                     controller.selectedIndex = actionCard.actionIndex
@@ -1207,6 +1230,10 @@ ApplicationWindow {
                                 font.pixelSize: 13
                                 leftPadding: 13
                                 rightPadding: 42
+                                onCurrentIndexChanged: {
+                                    if (controller.actionCaptureMode !== "")
+                                        controller.cancelActionCapture()
+                                }
                                 contentItem: Text {
                                     text: actionType.displayText
                                     color: root.ink
@@ -1284,13 +1311,38 @@ ApplicationWindow {
                             }
 
                             FormLabel { visible: !editor.mouseAction; text: editor.kindValue() === "text" ? "TEXT TO TYPE" : "KEY OR SHORTCUT"; Layout.topMargin: 7 }
-                            KField { id: valueField; visible: !editor.mouseAction; Layout.fillWidth: true; placeholderText: editor.kindValue() === "hotkey" ? "ctrl+shift+s" : editor.kindValue() === "text" ? "Type something…" : "space" }
+                            KField { id: valueField; objectName: "actionValueField"; visible: !editor.mouseAction; Layout.fillWidth: true; placeholderText: editor.kindValue() === "hotkey" ? "ctrl+shift+s" : editor.kindValue() === "text" ? "Type something…" : "space" }
                             KButton {
+                                objectName: "recordActionKey"
                                 visible: editor.kindValue() === "key"
                                 Layout.fillWidth: true
-                                text: "Listen for a key"
-                                leading: "⌨"
-                                onClicked: controller.recordActionKey()
+                                text: controller.actionCaptureMode === "key"
+                                      ? "Cancel key recording"
+                                      : "Listen for a key"
+                                leading: controller.actionCaptureMode === "key" ? "×" : "⌨"
+                                activeNeutral: controller.actionCaptureMode === "key"
+                                onClicked: {
+                                    if (controller.actionCaptureMode === "key")
+                                        controller.cancelActionCapture()
+                                    else
+                                        controller.recordActionKey()
+                                }
+                            }
+                            KButton {
+                                objectName: "recordActionHotkey"
+                                visible: editor.kindValue() === "hotkey"
+                                Layout.fillWidth: true
+                                text: controller.actionCaptureMode === "hotkey"
+                                      ? "Cancel hotkey recording"
+                                      : "Record hotkey"
+                                leading: controller.actionCaptureMode === "hotkey" ? "×" : "⌘"
+                                activeNeutral: controller.actionCaptureMode === "hotkey"
+                                onClicked: {
+                                    if (controller.actionCaptureMode === "hotkey")
+                                        controller.cancelActionCapture()
+                                    else
+                                        controller.recordActionHotkey()
+                                }
                             }
 
                             Rectangle {
@@ -1704,9 +1756,9 @@ ApplicationWindow {
                     }
                     KButton {
                         objectName: "refreshProfileLibraryButton"
-                        quiet: true
                         leading: "↻"
-                        implicitWidth: 42
+                        text: "Refresh"
+                        implicitWidth: 92
                         Accessible.name: "Refresh profiles"
                         ToolTip.visible: pointerHover
                         ToolTip.text: "Refresh profiles"
@@ -1714,8 +1766,8 @@ ApplicationWindow {
                     }
                     KButton {
                         objectName: "closeProfileLibraryButton"
-                        quiet: true
-                        leading: "×"
+                        activeNeutral: true
+                        hamburgerIcon: true
                         implicitWidth: 42
                         Accessible.name: "Close profiles"
                         ToolTip.visible: pointerHover
@@ -1755,10 +1807,9 @@ ApplicationWindow {
                         }
                         KButton {
                             objectName: "chooseProfileFolderButton"
-                            text: "Change"
-                            quiet: true
-                            implicitWidth: 78
-                            implicitHeight: 36
+                            text: "Browse"
+                            implicitWidth: 84
+                            implicitHeight: 38
                             onClicked: controller.chooseProfileFolder()
                         }
                     }
@@ -1782,7 +1833,10 @@ ApplicationWindow {
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     model: controller.profileEntries
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: KScrollBar {
+                        id: profileScrollBar
+                        objectName: "profileLibraryScrollBar"
+                    }
                     delegate: AbstractButton {
                         id: profileRow
                         required property var modelData
@@ -1792,6 +1846,7 @@ ApplicationWindow {
                         property bool pointerHover: false
                         objectName: "profileLibraryRow_" + index
                         width: ListView.view.width
+                               - (profileScrollBar.visible ? profileScrollBar.width + 8 : 0)
                         height: 80
                         enabled: modelData.valid && !controller.running
                         hoverEnabled: true
@@ -1966,6 +2021,7 @@ ApplicationWindow {
                         objectName: "profileLibrarySaveAsButton"
                         Layout.fillWidth: true
                         text: "Save as…"
+                        primary: true
                         enabled: !controller.running
                         onClicked: root.saveProfileAsWithVisibleSettings()
                     }
@@ -1984,6 +2040,7 @@ ApplicationWindow {
     Dialog {
         id: windowPickerDialog
         objectName: "windowPickerDialog"
+        parent: Overlay.overlay
         modal: true
         closePolicy: Popup.CloseOnEscape
         width: Math.min(780, root.width - 48)
@@ -1991,6 +2048,10 @@ ApplicationWindow {
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
         padding: 0
+        onOpened: {
+            windowPickerScroll.contentY = 0
+            windowPickerScroll.forceActiveFocus()
+        }
         background: Rectangle {
             radius: 20
             color: root.surface
@@ -2032,15 +2093,13 @@ ApplicationWindow {
                         Layout.preferredWidth: 94
                         text: "Refresh"
                         leading: "↻"
-                        quiet: true
                         onClicked: controller.refreshWindowEntries()
                     }
                     KButton {
                         objectName: "windowPickerCloseButton"
-                        Layout.preferredWidth: 44
-                        text: ""
-                        leading: "×"
-                        quiet: true
+                        Layout.preferredWidth: 76
+                        text: "Close"
+                        activeNeutral: true
                         Accessible.name: "Close window picker"
                         onClicked: windowPickerDialog.close()
                     }
@@ -2049,28 +2108,29 @@ ApplicationWindow {
 
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
 
-            ScrollView {
+            Flickable {
                 id: windowPickerScroll
                 objectName: "windowPickerScroll"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                contentWidth: availableWidth
-                ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    implicitWidth: 10
-                    background: Item {}
-                    contentItem: Rectangle {
-                        implicitWidth: 6
-                        radius: 3
-                        color: parent.pressed ? root.ink3 : "#B8C1CF"
-                        opacity: parent.active ? 0.9 : 0.55
-                        Behavior on opacity { NumberAnimation { duration: 120 } }
-                    }
+                contentWidth: width
+                contentHeight: windowPickerContent.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
+                maximumFlickVelocity: 3200
+                flickDeceleration: 2600
+                onContentHeightChanged: Qt.callLater(function() {
+                    windowPickerScroll.returnToBounds()
+                })
+                ScrollBar.vertical: KScrollBar {
+                    id: windowPickerScrollBar
+                    objectName: "windowPickerScrollBar"
                 }
 
                 ColumnLayout {
-                    width: windowPickerScroll.availableWidth
+                    id: windowPickerContent
+                    width: windowPickerScroll.width
+                           - (windowPickerScrollBar.visible ? windowPickerScrollBar.width + 8 : 0)
                     spacing: 10
 
                     FormLabel {
@@ -2399,19 +2459,20 @@ ApplicationWindow {
                 KButton {
                     objectName: "unsavedCancelButton"
                     text: "Cancel"
-                    Layout.preferredWidth: 88
+                    Layout.fillWidth: true
+                    implicitHeight: 44
                     onClicked: {
                         root.pendingDestructiveAction = ""
                         root.pendingProfilePath = ""
                         unsavedDialog.close()
                     }
                 }
-                Item { Layout.fillWidth: true }
                 KButton {
                     objectName: "unsavedDiscardButton"
                     text: "Discard"
                     danger: true
-                    Layout.preferredWidth: 96
+                    Layout.fillWidth: true
+                    implicitHeight: 44
                     onClicked: {
                         var action = root.pendingDestructiveAction
                         root.pendingDestructiveAction = ""
@@ -2421,7 +2482,8 @@ ApplicationWindow {
                 }
                 KButton {
                     objectName: "unsavedSaveButton"
-                    Layout.preferredWidth: 168
+                    Layout.fillWidth: true
+                    implicitHeight: 44
                     text: "Save & continue"
                     primary: true
                     onClicked: {
@@ -2472,6 +2534,8 @@ ApplicationWindow {
             toastTimer.restart()
         }
         function onSelectedIndexChanged() {
+            if (controller.actionCaptureMode !== "")
+                controller.cancelActionCapture()
             if (controller.selectedIndex >= 0) {
                 root.editorIndex = controller.selectedIndex
                 editor.loadAction(controller.selectedIndex)
@@ -2492,7 +2556,12 @@ ApplicationWindow {
             editor.coordinateSpace = coordinateSpace
         }
         function onActionKeyCaptured(value) {
-            valueField.text = value
+            if (editor.kindValue() === "key")
+                valueField.text = value
+        }
+        function onActionHotkeyCaptured(value) {
+            if (editor.kindValue() === "hotkey")
+                valueField.text = value
         }
         function onShortcutCaptured(target, value) {
             var proposed = controller.globalShortcutConflicts(

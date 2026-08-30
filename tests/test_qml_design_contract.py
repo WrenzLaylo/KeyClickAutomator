@@ -136,8 +136,11 @@ def test_safe_editing_controls_cover_recovery_undo_and_targeted_runs():
     assert 'objectName: "recoveryDialog"' in QML
     assert 'objectName: "recoveryDiscardButton"' in QML
     assert 'objectName: "recoveryAcceptButton"' in QML
-    assert 'Layout.preferredWidth: 104' in QML
-    assert 'Layout.preferredWidth: 164' in QML
+    assert 'Layout.preferredWidth: 88' in QML
+    assert 'Layout.preferredWidth: 148' in QML
+    assert 'id: buttonContent' in APP_BUTTON
+    assert 'anchors.centerIn: parent' in APP_BUTTON
+    assert 'objectName: control.objectName + "_label"' in APP_BUTTON
     assert 'objectName: "unsavedChangesDialog"' in QML
     assert 'objectName: "unsavedCancelButton"' in QML
     assert 'objectName: "unsavedDiscardButton"' in QML
@@ -156,12 +159,18 @@ def test_in_app_profile_library_supports_switching_and_folder_management():
     assert 'objectName: "chooseProfileFolderButton"' in QML
     assert 'objectName: "profileLibrarySaveAsButton"' in QML
     assert 'objectName: "profileLibraryOpenFileButton"' in QML
+    assert QML.count("Layout.preferredWidth: 112") >= 2
     assert "model: controller.profileEntries" in QML
     assert "modelData.path === controller.currentProfilePath" in QML
     assert "root.requestProfileOpen(modelData.path)" in QML
     assert 'sequence: "Ctrl+O"' in QML
     assert 'sequence: "Ctrl+Shift+S"' in QML
     assert 'objectName: "profileLibraryScrollBar"' in QML
+
+
+def test_sequence_status_uses_the_full_header_width():
+    assert 'objectName: "sequenceHeaderRow"' in QML
+    assert "Layout.preferredWidth: parent.width" in QML
     assert "property bool hamburgerIcon" in APP_BUTTON
     assert "hamburgerIcon: true" in QML
     assert 'text: "Refresh"' in QML
@@ -178,6 +187,8 @@ def test_sequence_actions_support_pointer_dragging_and_button_reordering():
     assert "controller.moveAction(controller.selectedIndex, 1)" in QML
     assert "visible: actionCard.actionIndex < actionList.count - 1" in QML
     assert "transform: Translate { y: reorderDrag.active ? reorderDrag.translation.y : 0 }" in QML
+    assert "move: Transition" not in QML
+    assert "moveDisplaced: Transition" not in QML
 
 
 def test_scrollbars_only_render_for_overflow_and_lists_reserve_a_gutter():
@@ -187,6 +198,9 @@ def test_scrollbars_only_render_for_overflow_and_lists_reserve_a_gutter():
     assert "sequenceScrollBar.visible ? sequenceScrollBar.width + 8 : 0" in QML
     assert "profileScrollBar.visible ? profileScrollBar.width + 8 : 0" in QML
     assert 'objectName: "windowPickerScrollBar"' in QML
+    assert "topPadding: 8" in QML
+    assert "bottomPadding: 14" in QML
+    assert 'objectName: control.objectName + "_thumb"' in APP_SCROLLBAR
 
 
 def test_window_picker_uses_a_bounded_overlay_flick_area():
@@ -194,6 +208,8 @@ def test_window_picker_uses_a_bounded_overlay_flick_area():
     assert "id: windowPickerScroll" in QML
     assert "boundsBehavior: Flickable.StopAtBounds" in QML
     assert "windowPickerScroll.returnToBounds()" in QML
+    assert "Layout.rightMargin: 6" in QML
+    assert "Layout.bottomMargin: 10" in QML
 
 
 def test_background_window_targeting_discloses_picker_and_compatibility_limits():

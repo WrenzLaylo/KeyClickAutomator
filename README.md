@@ -23,7 +23,7 @@
   <a href="#build-a-release">Build a release</a>
 </p>
 
-> Current release: **3.4.3** · Windows 10/11 · 64-bit
+> Current release: **3.4.4** · Windows 10/11 · 64-bit
 
 <p align="center">
   <img src="assets/screenshots/keyclick-main.png" alt="KeyClick Automator showing a visual sequence and the Run inspector" width="1200">
@@ -53,8 +53,8 @@ and stop the automation immediately whenever you need to.
 
 | Build | Best for | What you need |
 | --- | --- | --- |
-| `KeyClickAutomator-Portable-3.4.3.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
-| `KeyClickAutomator-Setup-3.4.3.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
+| `KeyClickAutomator-Portable-3.4.4.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
+| `KeyClickAutomator-Setup-3.4.4.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
 
 Both builds are created in the `release` folder. The portable build is one
 standalone file. The setup download is smaller because it installs the bundled
@@ -186,7 +186,21 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - A deleted action can be restored with **Undo** or `Ctrl+Z`.
 - Profiles created by earlier 3.x releases remain compatible.
 
-## What's new in 3.4.3
+## What's new in 3.4.4
+
+- Modified hotkeys now record the intended printable key on Windows, including
+  `Ctrl+Shift+C` and `Ctrl+Alt+C`, instead of displaying a control character or
+  raw virtual-key value
+- Shared buttons now center their complete icon, label, and shortcut-hint group;
+  recovery, profile, and window-picker actions also use compact consistent widths
+- The sequence status stays pinned to the far right while long profile summaries
+  elide cleanly, and profile footer actions no longer stretch across the drawer
+- Dragging a sequence moves only its card surface while numbered badges and the
+  vertical timeline remain anchored, with the final order settling immediately
+- Window-picker scrollbar spacing now stays inside the rounded dialog even after
+  fast scrolling, while its Close label remains centered
+
+### Previous release: 3.4.3
 
 - Scrollbars now appear only when content overflows, and long sequence and profile
   lists reserve a clear gutter so cards never sit beneath the scroll thumb
@@ -199,7 +213,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - Hotkey actions now include a dedicated recorder that waits for a modifier-plus-key
   combination, and card dragging keeps the numbered timeline anchored until drop
 
-### Previous release: 3.4.2
+### Earlier release: 3.4.2
 
 - Custom global shortcuts now reserve the complete chord instead of every
   individual key, so a Start shortcut such as `Ctrl+S` no longer blocks an
@@ -225,6 +239,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 
 | Version | Summary |
 | --- | --- |
+| 3.4.4 | Correct modified-hotkey capture, centered compact controls, and anchored sequence dragging |
 | 3.4.3 | Overflow-only scrolling, stable window picking, recorder handoff, and UI polish |
 | 3.4.2 | Complete-chord shortcut safety, earlier validation, UI containment, and project polish |
 | 3.4.1 | Safer paced background delivery with responsiveness and queue-flood protection |
@@ -277,7 +292,7 @@ Build the single-file portable app:
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller --clean --noconfirm KeyClickAutomator.spec
 New-Item -ItemType Directory -Force release | Out-Null
-Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.3.exe
+Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.4.exe
 ```
 
 Build the installer payload, then compile it with Inno Setup 6:

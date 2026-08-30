@@ -15,6 +15,7 @@ ScrollBar {
     padding: 2
     background: Item {}
     contentItem: Rectangle {
+        objectName: control.objectName + "_thumb"
         implicitWidth: 6
         radius: 3
         color: control.pressed ? control.pressedThumbColor : control.thumbColor

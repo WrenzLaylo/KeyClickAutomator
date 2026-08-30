@@ -86,11 +86,17 @@ def test_header_status_badge_aligns_with_the_sequence_heading():
 
     heading = window.findChild(QQuickItem, "sequenceHeading")
     status = window.findChild(QQuickItem, "headerStatusBadge")
-    assert heading is not None and status is not None
+    header_row = window.findChild(QQuickItem, "sequenceHeaderRow")
+    assert heading is not None and status is not None and header_row is not None
     heading_position = heading.mapToScene(QPointF(0, 0))
     status_position = status.mapToScene(QPointF(0, 0))
+    header_position = header_row.mapToScene(QPointF(0, 0))
     assert abs(status_position.y() - heading_position.y()) < 0.1
     assert status.height() == heading.height()
+    assert abs(header_row.width() - header_row.parentItem().width()) < 0.1
+    assert abs(
+        status_position.x() + status.width() - header_position.x() - header_row.width()
+    ) <= 0.5
 
     window.close()
     controller.shutdown()
@@ -218,6 +224,13 @@ def test_sequence_drag_handle_reorders_actions_and_marks_the_drop_position():
         visual_children_named(window.contentItem(), prefix),
         key=lambda item: item.mapToScene(QPointF(0, 0)).y(),
     )
+    timeline_badge_positions = [
+        badge.mapToScene(QPointF(0, 0)).y() for badge in ordered("stepBadge")
+    ]
+    timeline_connector_positions = [
+        connector.mapToScene(QPointF(0, 0)).y()
+        for connector in ordered("sequenceConnector")
+    ]
     first_badge = ordered("stepBadge")[0]
     first_connector = ordered("sequenceConnector")[0]
     first_surface = ordered("actionCardSurface")[0]
@@ -242,7 +255,18 @@ def test_sequence_drag_handle_reorders_actions_and_marks_the_drop_position():
     assert sum(item.isVisible() for item in indicators) == 1
 
     QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, end_point)
-    QTest.qWait(240)
+    QTest.qWait(40)
+    assert all(
+        abs(current.mapToScene(QPointF(0, 0)).y() - expected) < 0.1
+        for current, expected in zip(ordered("stepBadge"), timeline_badge_positions)
+    )
+    assert all(
+        abs(current.mapToScene(QPointF(0, 0)).y() - expected) < 0.1
+        for current, expected in zip(
+            ordered("sequenceConnector"), timeline_connector_positions
+        )
+    )
+    QTest.qWait(200)
     assert [action.value for action in controller.actions] == ["b", "c", "a"]
     assert controller.selectedIndex == 2
     assert window.property("draggedActionIndex") == -1
@@ -263,13 +287,30 @@ def test_recovery_dialog_actions_are_sized_and_contained_in_the_modal():
     background = dialog.property("background")
     discard = window.findChild(QQuickItem, "recoveryDiscardButton")
     recover = window.findChild(QQuickItem, "recoveryAcceptButton")
-    assert background is not None and discard is not None and recover is not None
+    discard_label = visual_children_named(
+        window.contentItem(), "recoveryDiscardButton_label"
+    )[0]
+    recover_label = visual_children_named(
+        window.contentItem(), "recoveryAcceptButton_label"
+    )[0]
+    assert all(
+        item is not None
+        for item in (background, discard, recover, discard_label, recover_label)
+    )
     background_position = background.mapToScene(QPointF(0, 0))
     discard_position = discard.mapToScene(QPointF(0, 0))
     recover_position = recover.mapToScene(QPointF(0, 0))
+    discard_label_position = discard_label.mapToItem(discard, QPointF(0, 0))
+    recover_label_position = recover_label.mapToItem(recover, QPointF(0, 0))
 
-    assert abs(discard.width() - 104) < 0.1
-    assert abs(recover.width() - 164) < 0.1
+    assert abs(discard.width() - 88) < 0.1
+    assert abs(recover.width() - 148) < 0.1
+    assert abs(
+        discard_label_position.x() + discard_label.width() / 2 - discard.width() / 2
+    ) <= 0.5
+    assert abs(
+        recover_label_position.x() + recover_label.width() / 2 - recover.width() / 2
+    ) <= 0.5
     assert abs(discard_position.y() - recover_position.y()) < 0.1
     assert discard_position.x() >= background_position.x() + 20
     assert recover_position.x() + recover.width() <= background_position.x() + background.width() - 20
@@ -340,6 +381,15 @@ def test_profile_library_switches_profiles_and_protects_unsaved_changes(tmp_path
     assert drawer is not None and unsaved is not None
     QMetaObject.invokeMethod(drawer, "open", Qt.DirectConnection)
     QTest.qWait(280)
+
+    save_as = window.findChild(QQuickItem, "profileLibrarySaveAsButton")
+    open_file = window.findChild(QQuickItem, "profileLibraryOpenFileButton")
+    assert save_as is not None and open_file is not None
+    assert abs(save_as.width() - 112) < 0.1
+    assert abs(open_file.width() - 112) < 0.1
+    save_position = save_as.mapToScene(QPointF(0, 0))
+    open_position = open_file.mapToScene(QPointF(0, 0))
+    assert open_position.x() - (save_position.x() + save_as.width()) >= 7
 
     rows = visual_children_named(window.contentItem(), "profileLibraryRow_")
     assert len(rows) == 2
@@ -703,11 +753,12 @@ def test_hotkey_action_has_a_recorder_that_populates_the_action_field(monkeypatc
     assert recorder.property("text") == "Cancel hotkey recording"
     listener = listeners[-1]
     assert listener.on_press(qt_controller.keyboard.Key.ctrl_l) is None
-    assert listener.on_press(qt_controller.keyboard.KeyCode.from_char("s")) is False
+    assert listener.on_press(qt_controller.keyboard.Key.shift) is None
+    assert listener.on_press(qt_controller.keyboard.KeyCode.from_char("\x03")) is False
     QTest.qWait(40)
 
     assert controller.actionCaptureMode == ""
-    assert value_field.property("text") == "ctrl+s"
+    assert value_field.property("text") == "ctrl+shift+c"
     assert recorder.property("text") == "Record hotkey"
     window.close()
     controller.shutdown()
@@ -803,8 +854,22 @@ def test_window_picker_fast_scroll_is_bounded_to_real_content():
     background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
     scroll = window.findChild(QQuickItem, "windowPickerScroll")
     scrollbar = window.findChild(QQuickItem, "windowPickerScrollBar")
+    scrollbar_thumb = window.findChild(QQuickItem, "windowPickerScrollBar_thumb")
+    close_button = window.findChild(QQuickItem, "windowPickerCloseButton")
+    close_label = window.findChild(QQuickItem, "windowPickerCloseButton_label")
     dialog = window.findChild(QObject, "windowPickerDialog")
-    assert all(item is not None for item in (background_mode, scroll, scrollbar, dialog))
+    assert all(
+        item is not None
+        for item in (
+            background_mode,
+            scroll,
+            scrollbar,
+            scrollbar_thumb,
+            close_button,
+            close_label,
+            dialog,
+        )
+    )
 
     QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
     QTest.qWait(120)
@@ -812,11 +877,31 @@ def test_window_picker_fast_scroll_is_bounded_to_real_content():
     assert dialog.property("opened") is True
     assert maximum_y > 0
     assert scrollbar.isVisible() is True
+    close_label_position = close_label.mapToItem(close_button, QPointF(0, 0))
+    assert abs(
+        close_label_position.x() + close_label.width() / 2 - close_button.width() / 2
+    ) <= 0.5
 
     scroll.setProperty("contentY", maximum_y + 500)
     QMetaObject.invokeMethod(scroll, "returnToBounds", Qt.DirectConnection)
     QTest.qWait(600)
     assert scroll.property("contentY") <= maximum_y + 1
+    background = dialog.property("background")
+    background_position = background.mapToScene(QPointF(0, 0))
+    scrollbar_position = scrollbar.mapToScene(QPointF(0, 0))
+    thumb_position = scrollbar_thumb.mapToScene(QPointF(0, 0))
+    assert (
+        scrollbar_position.y() + scrollbar.height()
+        <= background_position.y() + background.height() - 10
+    )
+    assert (
+        scrollbar_position.x() + scrollbar.width()
+        <= background_position.x() + background.width() - 6
+    )
+    assert (
+        thumb_position.y() + scrollbar_thumb.height()
+        <= background_position.y() + background.height() - 12
+    )
 
     QMetaObject.invokeMethod(dialog, "close", Qt.DirectConnection)
     window.close()

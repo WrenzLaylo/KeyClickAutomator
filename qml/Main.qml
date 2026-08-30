@@ -504,11 +504,19 @@ ApplicationWindow {
                 anchors.bottomMargin: 18
                 spacing: 12
 
-                RowLayout {
+                Item {
+                    objectName: "sequenceHeaderRow"
                     Layout.fillWidth: true
+                    Layout.preferredWidth: parent.width
                     Layout.preferredHeight: 68
                     ColumnLayout {
-                        Layout.fillWidth: true
+                        anchors.left: parent.left
+                        anchors.right: inspectorToggleButton.visible
+                                     ? inspectorToggleButton.left
+                                     : statusBadge.left
+                        anchors.rightMargin: 12
+                        anchors.top: parent.top
+                        height: implicitHeight
                         spacing: 3
                         Text {
                             objectName: "sequenceHeading"
@@ -519,18 +527,34 @@ ApplicationWindow {
                             font.weight: Font.Bold
                         }
                         Text {
+                            Layout.fillWidth: true
                             text: controller.currentProfileName + (controller.dirty ? "  ·  Unsaved" : "") + "  ·  " + controller.summary
+                            elide: Text.ElideRight
                             color: root.ink2
                             font.family: interRegular.name || root.font.family
                             font.pixelSize: 12
                         }
                     }
+                    KButton {
+                        id: inspectorToggleButton
+                        objectName: "inspectorToggleButton"
+                        visible: root.overlayInspector
+                        anchors.right: statusBadge.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: statusBadge.verticalCenter
+                        text: "Inspector"
+                        leading: "⚙"
+                        onClicked: root.inspectorOpen = !root.inspectorOpen
+                    }
                     Rectangle {
+                        id: statusBadge
                         objectName: "headerStatusBadge"
-                        Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: 8
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         implicitWidth: statusRow.implicitWidth + 22
                         implicitHeight: 34
+                        width: implicitWidth
+                        height: implicitHeight
                         radius: 11
                         color: controller.statusTone === "success" ? "#E8F7F0" : controller.statusTone === "danger" ? "#FFF0F2" : controller.statusTone === "accent" ? root.primarySoft : root.surface2
                         Behavior on color { ColorAnimation { duration: 180 } }
@@ -551,12 +575,6 @@ ApplicationWindow {
                             }
                             Text { text: controller.status; color: root.toneColor(controller.statusTone); font.family: interSemiBold.name || root.font.family; font.pixelSize: 11 }
                         }
-                    }
-                    KButton {
-                        visible: root.overlayInspector
-                        text: "Inspector"
-                        leading: "⚙"
-                        onClicked: root.inspectorOpen = !root.inspectorOpen
                     }
                 }
 
@@ -679,12 +697,6 @@ ApplicationWindow {
                         ScrollBar.vertical: KScrollBar {
                             id: sequenceScrollBar
                             objectName: "sequenceScrollBar"
-                        }
-                        move: Transition {
-                            NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
-                        }
-                        moveDisplaced: Transition {
-                            NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
                         }
                         delegate: Rectangle {
                             id: actionCard
@@ -2017,9 +2029,10 @@ ApplicationWindow {
                     anchors.leftMargin: 14
                     anchors.rightMargin: 14
                     spacing: 8
+                    Item { Layout.fillWidth: true }
                     KButton {
                         objectName: "profileLibrarySaveAsButton"
-                        Layout.fillWidth: true
+                        Layout.preferredWidth: 112
                         text: "Save as…"
                         primary: true
                         enabled: !controller.running
@@ -2027,7 +2040,7 @@ ApplicationWindow {
                     }
                     KButton {
                         objectName: "profileLibraryOpenFileButton"
-                        Layout.fillWidth: true
+                        Layout.preferredWidth: 112
                         text: "Open file…"
                         enabled: !controller.running
                         onClicked: root.requestDestructiveAction("open")
@@ -2113,6 +2126,8 @@ ApplicationWindow {
                 objectName: "windowPickerScroll"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.rightMargin: 6
+                Layout.bottomMargin: 10
                 clip: true
                 contentWidth: width
                 contentHeight: windowPickerContent.implicitHeight
@@ -2125,6 +2140,8 @@ ApplicationWindow {
                 ScrollBar.vertical: KScrollBar {
                     id: windowPickerScrollBar
                     objectName: "windowPickerScrollBar"
+                    topPadding: 8
+                    bottomPadding: 14
                 }
 
                 ColumnLayout {
@@ -2397,7 +2414,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 KButton {
                     objectName: "recoveryDiscardButton"
-                    Layout.preferredWidth: 104
+                    Layout.preferredWidth: 88
                     text: "Discard"
                     danger: true
                     onClicked: {
@@ -2407,7 +2424,7 @@ ApplicationWindow {
                 }
                 KButton {
                     objectName: "recoveryAcceptButton"
-                    Layout.preferredWidth: 164
+                    Layout.preferredWidth: 148
                     text: "Recover sequence"
                     primary: true
                     onClicked: {

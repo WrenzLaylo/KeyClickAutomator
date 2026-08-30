@@ -369,12 +369,26 @@ def test_action_hotkey_recorder_waits_for_a_modifier_combination(monkeypatch):
     assert controller.actionCaptureMode == "hotkey"
     assert listener.on_press(keyboard.Key.ctrl_l) is None
     assert listener.on_press(keyboard.Key.shift) is None
-    assert listener.on_press(keyboard.KeyCode.from_char("s")) is False
+    assert listener.on_press(keyboard.KeyCode.from_char("\x03")) is False
 
     assert captured.count() == 1
-    assert captured.at(0) == ["ctrl+shift+s"]
+    assert captured.at(0) == ["ctrl+shift+c"]
     assert controller.actionCaptureMode == ""
+
+    assert controller.recordActionHotkey() is True
+    listener = listeners[-1]
+    assert listener.on_press(keyboard.Key.alt_l) is None
+    assert listener.on_press(keyboard.Key.ctrl_l) is None
+    assert listener.on_press(keyboard.KeyCode.from_vk(67)) is False
+    assert captured.count() == 2
+    assert captured.at(1) == ["ctrl+alt+c"]
     controller.shutdown()
+
+
+def test_key_name_normalizes_modified_printable_windows_keys():
+    assert AutomatorController.keyName(keyboard.KeyCode.from_char("\x03")) == "c"
+    assert AutomatorController.keyName(keyboard.KeyCode.from_vk(67)) == "c"
+    assert AutomatorController.keyName(keyboard.KeyCode.from_vk(88)) == "x"
 
 
 def test_global_shortcut_recorder_captures_modifier_combination_without_applying(monkeypatch):
@@ -401,7 +415,7 @@ def test_global_shortcut_recorder_captures_modifier_combination_without_applying
     listener = listeners[-1]
     assert listener.on_press(keyboard.Key.ctrl_l) is None
     assert listener.on_press(keyboard.Key.shift) is None
-    assert listener.on_press(keyboard.KeyCode.from_char("s")) is False
+    assert listener.on_press(keyboard.KeyCode.from_char("\x13")) is False
     QTest.qWait(20)
 
     assert captured.count() == 1

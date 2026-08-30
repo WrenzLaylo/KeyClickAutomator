@@ -38,93 +38,101 @@ AbstractButton {
         onHoveredChanged: control.pointerHover = hovered
     }
 
-    contentItem: Row {
-        spacing: 7
-        anchors.centerIn: parent
+    contentItem: Item {
+        implicitWidth: buttonContent.implicitWidth
+        implicitHeight: buttonContent.implicitHeight
 
-        Item {
-            visible: control.hamburgerIcon
-            width: visible ? 16 : 0
-            height: 14
-            anchors.verticalCenter: parent.verticalCenter
+        Row {
+            id: buttonContent
+            spacing: 7
+            anchors.centerIn: parent
 
-            Repeater {
-                model: 3
-                Rectangle {
-                    required property int index
-                    x: 0
-                    y: 1 + index * 5
-                    width: 16
-                    height: 2
-                    radius: 1
-                    color: control.enabled
-                        ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
-                        : control.mutedInkColor
+            Item {
+                visible: control.hamburgerIcon
+                width: visible ? 16 : 0
+                height: 14
+                anchors.verticalCenter: parent.verticalCenter
+
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        required property int index
+                        x: 0
+                        y: 1 + index * 5
+                        width: 16
+                        height: 2
+                        radius: 1
+                        color: control.enabled
+                            ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
+                            : control.mutedInkColor
+                    }
                 }
             }
-        }
-
-        Text {
-            visible: control.leading !== ""
-            text: control.leading
-            color: control.enabled
-                ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
-                : control.mutedInkColor
-            font.family: control.buttonFontFamily
-            font.pixelSize: 15
-            anchors.verticalCenter: parent.verticalCenter
-        }
-
-        Text {
-            visible: control.text !== ""
-            text: control.text
-            color: control.enabled
-                ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
-                : control.mutedInkColor
-            font: control.font
-            anchors.verticalCenter: parent.verticalCenter
-        }
-
-        Rectangle {
-            objectName: control.objectName + "_keyHint"
-            visible: control.keyHint !== ""
-            width: visible ? Math.max(28, Math.min(42, keyHintLabel.implicitWidth + 12)) : 0
-            height: 22
-            radius: 7
-            color: !control.enabled
-                ? "#DCE2EB"
-                : control.primary
-                    ? "#30FFFFFF"
-                    : control.danger
-                        ? "#FFE5EA"
-                        : control.surfaceColor
-            border.width: 1
-            border.color: !control.enabled
-                ? "#CDD4DF"
-                : control.primary
-                    ? "#52FFFFFF"
-                    : control.danger
-                        ? "#F1BEC8"
-                        : control.lineColor
-            anchors.verticalCenter: parent.verticalCenter
 
             Text {
-                id: keyHintLabel
-                width: parent.width - 8
-                anchors.centerIn: parent
-                text: control.keyHint.toUpperCase()
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignHCenter
-                color: !control.enabled
-                    ? control.mutedInkColor
-                    : control.primary
-                        ? "white"
-                        : control.danger
-                            ? control.dangerColor
-                            : control.secondaryInkColor
+                visible: control.leading !== ""
+                text: control.leading
+                color: control.enabled
+                    ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
+                    : control.mutedInkColor
                 font.family: control.buttonFontFamily
-                font.pixelSize: 9
-                font.letterSpacing: 0.3
+                font.pixelSize: 15
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                objectName: control.objectName + "_label"
+                visible: control.text !== ""
+                text: control.text
+                color: control.enabled
+                    ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
+                    : control.mutedInkColor
+                font: control.font
+                horizontalAlignment: Text.AlignHCenter
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Rectangle {
+                objectName: control.objectName + "_keyHint"
+                visible: control.keyHint !== ""
+                width: visible ? Math.max(28, Math.min(42, keyHintLabel.implicitWidth + 12)) : 0
+                height: 22
+                radius: 7
+                color: !control.enabled
+                    ? "#DCE2EB"
+                    : control.primary
+                        ? "#30FFFFFF"
+                        : control.danger
+                            ? "#FFE5EA"
+                            : control.surfaceColor
+                border.width: 1
+                border.color: !control.enabled
+                    ? "#CDD4DF"
+                    : control.primary
+                        ? "#52FFFFFF"
+                        : control.danger
+                            ? "#F1BEC8"
+                            : control.lineColor
+                anchors.verticalCenter: parent.verticalCenter
+
+                Text {
+                    id: keyHintLabel
+                    width: parent.width - 8
+                    anchors.centerIn: parent
+                    text: control.keyHint.toUpperCase()
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
+                    color: !control.enabled
+                        ? control.mutedInkColor
+                        : control.primary
+                            ? "white"
+                            : control.danger
+                                ? control.dangerColor
+                                : control.secondaryInkColor
+                    font.family: control.buttonFontFamily
+                    font.pixelSize: 9
+                    font.letterSpacing: 0.3
+                }
             }
         }
     }

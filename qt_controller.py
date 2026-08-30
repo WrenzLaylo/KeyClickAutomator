@@ -56,7 +56,7 @@ from window_backend import (
 )
 
 
-APP_VERSION = "3.4.3"
+APP_VERSION = "3.4.4"
 
 
 class ActionListModel(QAbstractListModel):
@@ -1286,8 +1286,40 @@ class AutomatorController(QObject):
 
     @staticmethod
     def keyName(key: keyboard.Key | keyboard.KeyCode) -> str:
-        if isinstance(key, keyboard.KeyCode) and key.char:
-            return key.char.lower()
+        if isinstance(key, keyboard.KeyCode):
+            char = key.char
+            if char:
+                if len(char) == 1:
+                    codepoint = ord(char)
+                    if 1 <= codepoint <= 26:
+                        return chr(ord("a") + codepoint - 1)
+                    if char == " ":
+                        return "space"
+                if char.isprintable():
+                    return char.lower()
+
+            virtual_key = getattr(key, "vk", None)
+            if isinstance(virtual_key, int):
+                if 0x41 <= virtual_key <= 0x5A:
+                    return chr(virtual_key).lower()
+                if 0x30 <= virtual_key <= 0x39:
+                    return chr(virtual_key)
+                virtual_key_names = {
+                    0x20: "space",
+                    0xBA: ";",
+                    0xBB: "=",
+                    0xBC: ",",
+                    0xBD: "-",
+                    0xBE: ".",
+                    0xBF: "/",
+                    0xC0: "`",
+                    0xDB: "[",
+                    0xDC: "\\",
+                    0xDD: "]",
+                    0xDE: "'",
+                }
+                if virtual_key in virtual_key_names:
+                    return virtual_key_names[virtual_key]
         return getattr(key, "name", str(key).replace("Key.", "")).lower()
 
     def _set_action_capture_mode(self, mode: str) -> None:

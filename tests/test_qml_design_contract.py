@@ -1,7 +1,13 @@
 from pathlib import Path
 
 
-QML = (Path(__file__).parents[1] / "qml" / "Main.qml").read_text(encoding="utf-8")
+_QML_ROOT = Path(__file__).parents[1] / "qml"
+# Read every QML file so these contracts keep holding as the UI is split up.
+QML = "\n".join(
+    path.read_text(encoding="utf-8")
+    for path in sorted(_QML_ROOT.rglob("*.qml"))
+    if path.name != "AppButton.qml"
+)
 APP_BUTTON = (Path(__file__).parents[1] / "qml" / "components" / "AppButton.qml").read_text(encoding="utf-8")
 APP_SCROLLBAR = (Path(__file__).parents[1] / "qml" / "components" / "AppScrollBar.qml").read_text(encoding="utf-8")
 QT_APP = (Path(__file__).parents[1] / "qt_app.py").read_text(encoding="utf-8")

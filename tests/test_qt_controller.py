@@ -5,6 +5,7 @@ from pynput import keyboard
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtTest import QSignalSpy, QTest
 
+import controller_running
 import qt_controller
 import profile_catalog
 from engine import Action, RunSettings, load_profile, save_profile
@@ -346,7 +347,7 @@ def test_profile_queue_runs_sequentially_without_switching_the_editor(monkeypatc
             progress("action", 0, len(actions))
             return True
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", RecordingRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", RecordingRunner)
     controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
     controller.addAction({"kind": "key", "value": "x"})
     editor_values = [action.value for action in controller.actions]
@@ -391,7 +392,7 @@ def test_profile_queue_stops_remaining_profiles_after_an_error(monkeypatch, tmp_
         ):
             raise RuntimeError("target stopped responding")
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", FailingRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", FailingRunner)
     controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
     controller.enqueueProfile(str(first))
     controller.enqueueProfile(str(second))
@@ -438,7 +439,7 @@ def test_stop_all_stops_the_active_profile_and_cancels_waiting_profiles(
             stop_event.wait(1)
             return False
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", BlockingRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", BlockingRunner)
     controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
     controller.enqueueProfile(str(first))
     controller.enqueueProfile(str(second))
@@ -509,7 +510,7 @@ def test_stopping_one_sequential_profile_continues_with_the_next(monkeypatch, tm
                 return False
             return True
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", SkippableRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", SkippableRunner)
     controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
     controller.enqueueProfile(str(first))
     controller.enqueueProfile(str(second))
@@ -602,7 +603,7 @@ def test_parallel_queue_starts_distinct_background_targets_together(monkeypatch,
                     return False
             return True
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", ParallelRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", ParallelRunner)
     controller = AutomatorController(
         start_hotkeys=False,
         profile_directory=tmp_path,
@@ -727,7 +728,7 @@ def test_parallel_profile_can_be_paused_resumed_and_stopped_independently(
                 if self.hwnd == 202 and release_second.is_set():
                     return True
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", BlockingParallelRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", BlockingParallelRunner)
     controller = AutomatorController(
         start_hotkeys=False,
         profile_directory=tmp_path,
@@ -1077,7 +1078,7 @@ def test_single_run_still_reports_progress_while_parallel_mode_is_selected(monke
             progress("running", 1, 1)
             return True
 
-    monkeypatch.setattr(qt_controller, "AutomationRunner", RecordingRunner)
+    monkeypatch.setattr(controller_running, "AutomationRunner", RecordingRunner)
     controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
     controller.addAction({"kind": "key", "value": "x"})
     assert controller.setRunQueueMode("parallel") is True

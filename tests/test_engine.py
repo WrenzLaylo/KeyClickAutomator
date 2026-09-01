@@ -311,6 +311,63 @@ def test_repeat_forever_runs_until_cancelled():
     assert backend.calls == [("press", "x"), ("press", "x"), ("press", "x")]
 
 
+def test_runner_pauses_before_input_and_resumes_without_losing_the_action():
+    backend = FakeBackend()
+    pause = threading.Event()
+    pause.set()
+    finished = threading.Event()
+    result = []
+
+    def run():
+        result.append(
+            AutomationRunner(backend).run(
+                [Action("key", value="x", delay_after=0)],
+                RunSettings(start_delay=0),
+                threading.Event(),
+                pause_event=pause,
+            )
+        )
+        finished.set()
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert finished.wait(0.08) is False
+    assert backend.calls == []
+
+    pause.clear()
+    assert finished.wait(1)
+    worker.join(1)
+    assert result == [True]
+    assert backend.calls == [("press", "x")]
+
+
+def test_runner_can_be_stopped_while_paused():
+    stop = threading.Event()
+    pause = threading.Event()
+    pause.set()
+    finished = threading.Event()
+    result = []
+
+    def run():
+        result.append(
+            AutomationRunner(FakeBackend()).run(
+                [Action("key", value="x")],
+                RunSettings(start_delay=0),
+                stop,
+                pause_event=pause,
+            )
+        )
+        finished.set()
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert finished.wait(0.05) is False
+    stop.set()
+    assert finished.wait(1)
+    worker.join(1)
+    assert result == [False]
+
+
 def test_run_settings_reject_duplicate_hotkeys():
     with pytest.raises(ValueError, match="must be different"):
         RunSettings(start_hotkey="f6", capture_hotkey="f6", stop_hotkey="f9").validate()
@@ -369,6 +426,51 @@ def test_drag_releases_mouse_when_emergency_stop_occurs_mid_drag():
     )
     assert done is False
     assert backend.calls == [("moveTo", 0, 0), ("mouseDown", "left"), ("mouseUp", "left")]
+
+
+def test_pause_during_drag_releases_the_button_before_waiting():
+    pause = threading.Event()
+    released = threading.Event()
+    finished = threading.Event()
+    result = []
+
+    class PauseDuringDragBackend(FakeBackend):
+        def mouseDown(self, button="left", _pause=True):
+            super().mouseDown(button, _pause)
+            pause.set()
+
+        def mouseUp(self, button="left", _pause=True):
+            super().mouseUp(button, _pause)
+            released.set()
+
+    backend = PauseDuringDragBackend()
+
+    def run():
+        result.append(
+            AutomationRunner(backend).run(
+                [
+                    Action("drag", x=0, y=0, x2=20, y2=20, duration=0.04, delay_after=0),
+                    Action("key", value="x", delay_after=0),
+                ],
+                RunSettings(start_delay=0),
+                threading.Event(),
+                pause_event=pause,
+            )
+        )
+        finished.set()
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert released.wait(1)
+    assert finished.wait(0.05) is False
+    assert ("mouseUp", "left") in backend.calls
+    assert ("press", "x") not in backend.calls
+
+    pause.clear()
+    assert finished.wait(1)
+    worker.join(1)
+    assert result == [True]
+    assert backend.calls[-1] == ("press", "x")
 
 
 def test_chunked_text_and_drag_disable_pyautogui_global_pause():

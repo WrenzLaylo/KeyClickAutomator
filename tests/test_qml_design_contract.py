@@ -129,7 +129,10 @@ def test_action_key_and_hotkey_recorders_are_visible_and_cancellable():
 def test_click_actions_offer_live_pointer_targeting():
     assert 'objectName: "followPointerSwitch"' in QML
     assert 'text: "Follow current pointer"' in QML
-    assert "useCurrentPointer: clickAction && followPointerSwitch.checked && desktopTarget" in QML
+    assert "property bool followingPointer: clickAction && followPointerSwitch.checked && desktopTarget" in QML
+    assert "useCurrentPointer: followingPointer" in QML
+    assert 'coordinateSpace: followingPointer ? "screen" : coordinateSpace' in QML
+    assert "mouseAction && !followingPointer && coordinateSpace !==" in QML
 
 
 def test_safe_editing_controls_cover_recovery_undo_and_targeted_runs():
@@ -153,7 +156,7 @@ def test_safe_editing_controls_cover_recovery_undo_and_targeted_runs():
 
 
 def test_in_app_profile_library_supports_switching_and_folder_management():
-    assert 'objectName: "profileLibraryDrawer"' in QML
+    assert 'objectName: "profileLibraryPage"' in QML
     assert 'objectName: "profileLibraryList"' in QML
     assert 'objectName: "profileLibraryEmptyState"' in QML
     assert 'objectName: "chooseProfileFolderButton"' in QML
@@ -168,11 +171,32 @@ def test_in_app_profile_library_supports_switching_and_folder_management():
     assert 'objectName: "profileLibraryScrollBar"' in QML
 
 
+def test_multi_profile_runner_exposes_both_modes_and_per_profile_controls():
+    assert 'objectName: "workspaceTab_runner"' in QML
+    assert 'objectName: "runQueuePage"' in QML
+    assert 'model: controller.runQueueEntries' in QML
+    assert 'objectName: "queueProfileButton_" + profileDelegate.index' in QML
+    assert "controller.enqueueProfile(profileDelegate.profilePath)" in QML
+    assert "controller.moveQueuedProfile(queueCard.index, -1)" in QML
+    assert "controller.moveQueuedProfile(queueCard.index, 1)" in QML
+    assert "controller.removeQueuedProfile(queueCard.index)" in QML
+    assert 'objectName: "runQueueStopAllButton"' in QML
+    assert "controller.stopAllRuns()" in QML
+    assert 'objectName: "runQueueStartButton"' in QML
+    assert "controller.startRunQueue()" in QML
+    assert 'objectName: "runQueueSequentialModeButton"' in QML
+    assert 'objectName: "runQueueParallelModeButton"' in QML
+    assert 'controller.setRunQueueMode("sequential")' in QML
+    assert 'controller.setRunQueueMode("parallel")' in QML
+    assert 'objectName: "runQueuePause_" + queueCard.index' in QML
+    assert "controller.toggleRunSessionPaused(queueCard.modelData.id)" in QML
+    assert 'objectName: "runQueueStop_" + queueCard.index' in QML
+    assert "controller.stopRunSession(queueCard.modelData.id)" in QML
+
+
 def test_sequence_status_uses_the_full_header_width():
     assert 'objectName: "sequenceHeaderRow"' in QML
     assert "Layout.preferredWidth: parent.width" in QML
-    assert "property bool hamburgerIcon" in APP_BUTTON
-    assert "hamburgerIcon: true" in QML
     assert 'text: "Refresh"' in QML
 
 
@@ -223,8 +247,8 @@ def test_background_window_targeting_discloses_picker_and_compatibility_limits()
     assert "controller.startWindowPick()" in QML
     assert "controller.selectWindowTarget(modelData.handle)" in QML
     assert "Your pointer remains free" in QML
-    assert "coordinateSpace: coordinateSpace" in QML
-    assert "referenceWidth: referenceWidth" in QML
-    assert "referenceHeight: referenceHeight" in QML
-    assert "referenceWidth2: referenceWidth2" in QML
-    assert "referenceHeight2: referenceHeight2" in QML
+    assert 'coordinateSpace: followingPointer ? "screen" : coordinateSpace' in QML
+    assert "referenceWidth: followingPointer ? 0 : referenceWidth" in QML
+    assert "referenceHeight: followingPointer ? 0 : referenceHeight" in QML
+    assert "referenceWidth2: followingPointer ? 0 : referenceWidth2" in QML
+    assert "referenceHeight2: followingPointer ? 0 : referenceHeight2" in QML

@@ -9,6 +9,7 @@ from recovery_store import (
     remove_recovery_draft,
     write_recovery_draft,
 )
+from run_session import RunSession
 from shortcut_service import global_shortcut_conflicts, pynput_hotkey
 
 
@@ -30,6 +31,46 @@ def test_profile_catalog_filters_plain_json_and_sorts_newest_first(tmp_path):
     assert entries[2]["activeCount"] == 0
     assert entries[0]["valid"] is False
     assert profile_name("Example.kca.json") == "Example"
+
+
+def test_run_session_exposes_target_and_resets_runtime_state(tmp_path):
+    profile = tmp_path / "Window task.kca.json"
+    session = RunSession(
+        profile_name="Window task",
+        profile_path=str(profile),
+        actions=[Action("key", value="a")],
+        action_indices=[0],
+        settings=RunSettings(
+            target_mode="window",
+            target_window_title="Discord",
+            target_executable=r"C:\\Apps\\Discord.exe",
+        ),
+        completion_message="Window task complete",
+    )
+    session.state = "running"
+    session.status = "Cycle 2 of 4"
+    session.progress = 0.5
+    session.error = "old error"
+    session.pause_event.set()
+
+    entry = session.as_entry(2, 3)
+    assert entry["position"] == 2
+    assert entry["total"] == 3
+    assert entry["target"] == "Discord"
+    assert entry["actionCount"] == 1
+    assert entry["progress"] == 0.5
+    assert entry["paused"] is True
+
+    previous_stop_event = session.stop_event
+    previous_pause_event = session.pause_event
+    session.reset()
+    assert session.state == "queued"
+    assert session.status == "Queued"
+    assert session.progress == 0
+    assert session.error == ""
+    assert session.stop_event is not previous_stop_event
+    assert session.pause_event is not previous_pause_event
+    assert session.pause_event.is_set() is False
 
 
 def test_recovery_store_round_trip_and_cleanup(tmp_path):

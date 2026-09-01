@@ -238,6 +238,46 @@ def interruptible_sleep(seconds: float, stop_event: threading.Event) -> bool:
         stop_event.wait(min(remaining, 0.05))
 
 
+def wait_until_resumed(
+    stop_event: threading.Event,
+    pause_event: threading.Event | None,
+) -> bool:
+    """Wait while paused and remain immediately cancellable."""
+    while pause_event is not None and pause_event.is_set():
+        if stop_event.wait(0.05):
+            return False
+    return not stop_event.is_set()
+
+
+def pausable_sleep(
+    seconds: float,
+    stop_event: threading.Event,
+    pause_event: threading.Event | None,
+) -> bool:
+    """Count only active time while respecting pause and cancellation events."""
+    if pause_event is None:
+        return interruptible_sleep(seconds, stop_event)
+
+    remaining = max(0.0, seconds)
+    previous = time.monotonic()
+    while remaining > 0:
+        if pause_event.is_set():
+            if not wait_until_resumed(stop_event, pause_event):
+                return False
+            previous = time.monotonic()
+            continue
+        if stop_event.is_set():
+            return False
+        now = time.monotonic()
+        remaining -= max(0.0, now - previous)
+        previous = now
+        if remaining <= 0:
+            return True
+        if stop_event.wait(min(remaining, 0.05)):
+            return False
+    return not stop_event.is_set()
+
+
 class AutomationRunner:
     def __init__(self, backend: AutomationBackend, randomizer: Callable[[float, float], float] = random.uniform):
         self.backend = backend
@@ -306,15 +346,16 @@ class AutomationRunner:
         text_key_interval: float,
         stop_event: threading.Event,
         reserved_shortcuts: set[str],
+        pause_event: threading.Event | None = None,
     ) -> bool:
         """Execute long actions in cancellable chunks and always release held input."""
         if action.kind == "text":
             action.validate(reserved_shortcuts)
             for character in action.value:
-                if stop_event.is_set():
+                if not wait_until_resumed(stop_event, pause_event):
                     return False
                 self.backend.write(character, interval=0, _pause=False)
-                if not interruptible_sleep(text_key_interval, stop_event):
+                if not pausable_sleep(text_key_interval, stop_event, pause_event):
                     return False
             return True
 
@@ -328,6 +369,8 @@ class AutomationRunner:
                 steps = max(1, math.ceil(action.duration / 0.02))
                 step_delay = action.duration / steps
                 for step in range(1, steps + 1):
+                    # Finish an in-flight drag before pausing so a held mouse
+                    # button is never left down indefinitely.
                     if stop_event.is_set():
                         return False
                     x = round(start_x + (end_x - start_x) * step / steps)
@@ -339,6 +382,8 @@ class AutomationRunner:
             finally:
                 self._release_drag_mouse(end_x, end_y)
 
+        if not wait_until_resumed(stop_event, pause_event):
+            return False
         self.execute_action(action, text_key_interval, reserved_shortcuts)
         return not stop_event.is_set()
 
@@ -348,43 +393,60 @@ class AutomationRunner:
         settings: RunSettings,
         stop_event: threading.Event,
         progress: Callable[[str, int, int], None] | None = None,
+        pause_event: threading.Event | None = None,
+        reserved_shortcuts: set[str] | None = None,
     ) -> bool:
         if not actions:
             raise ValueError("Add at least one action before starting.")
         settings.validate()
-        reserved_shortcuts = canonical_global_shortcuts(
-            (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
-        )
+        if reserved_shortcuts is None:
+            reserved_shortcuts = canonical_global_shortcuts(
+                (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+            )
         for action in actions:
             action.validate(reserved_shortcuts)
 
         total_cycles = 0 if settings.repeat_forever else settings.repeat_count
         if progress:
             progress("timer", 0, total_cycles)
-        if not interruptible_sleep(settings.start_delay, stop_event):
+        if not pausable_sleep(settings.start_delay, stop_event, pause_event):
             return False
 
         cycle = 0
         while settings.repeat_forever or cycle < settings.repeat_count:
+            if not wait_until_resumed(stop_event, pause_event):
+                return False
             cycle += 1
             if progress:
                 progress("running", cycle, total_cycles)
             for action_index, action in enumerate(actions):
                 if not action.enabled:
                     continue
+                if not wait_until_resumed(stop_event, pause_event):
+                    return False
                 if progress:
                     progress("action", action_index, len(actions))
                 for _ in range(action.repeats):
-                    if stop_event.is_set():
+                    if not wait_until_resumed(stop_event, pause_event):
                         return False
-                    if not self._execute_interruptibly(action, settings.text_key_interval, stop_event, reserved_shortcuts):
+                    if not self._execute_interruptibly(
+                        action,
+                        settings.text_key_interval,
+                        stop_event,
+                        reserved_shortcuts,
+                        pause_event,
+                    ):
                         return False
                     delay = self._jittered(action.delay_after, settings.delay_jitter)
-                    if not interruptible_sleep(delay, stop_event):
+                    if not pausable_sleep(delay, stop_event, pause_event):
                         return False
             cycle_delay = self._jittered(settings.cycle_interval, settings.delay_jitter)
             has_next_cycle = settings.repeat_forever or cycle < settings.repeat_count
-            if has_next_cycle and not interruptible_sleep(cycle_delay, stop_event):
+            if has_next_cycle and not pausable_sleep(
+                cycle_delay,
+                stop_event,
+                pause_event,
+            ):
                 return False
         return True
 

@@ -17,6 +17,7 @@ from PySide6.QtCore import (
     QObject,
     Property,
     QStandardPaths,
+    QTimer,
     Qt,
     QUrl,
     Signal,
@@ -46,6 +47,7 @@ from recovery_store import (
     remove_recovery_draft,
     write_recovery_draft,
 )
+from run_session import RunSession
 from shortcut_service import global_shortcut_conflicts, pynput_hotkey
 from window_backend import (
     Win32WindowService,
@@ -56,7 +58,8 @@ from window_backend import (
 )
 
 
-APP_VERSION = "3.4.4"
+APP_VERSION = "3.5.0"
+MAX_PARALLEL_SESSIONS = 8
 
 
 class ActionListModel(QAbstractListModel):
@@ -211,13 +214,16 @@ class AutomatorController(QObject):
     windowPickStateChanged = Signal()
     windowEntriesChanged = Signal()
     runningActionIndexChanged = Signal()
+    runQueueChanged = Signal()
+    runQueueRunningChanged = Signal()
+    runQueueModeChanged = Signal()
     toast = Signal(str, str)
     positionCaptured = Signal(int, int, int, str, int, int)
     actionKeyCaptured = Signal(str)
     actionHotkeyCaptured = Signal(str)
     shortcutCaptured = Signal(str, str)
-    progressFromWorker = Signal(str, int, int)
-    finishedFromWorker = Signal(bool, str)
+    progressFromWorker = Signal(str, str, int, int)
+    finishedFromWorker = Signal(str, bool, str)
     hotkeyToggleRequested = Signal()
     hotkeyCaptureRequested = Signal()
     hotkeyStopRequested = Signal()
@@ -239,11 +245,12 @@ class AutomatorController(QObject):
         self._status_tone = "neutral"
         self._progress = 0.0
         self._running_action_index = -1
-        self._run_action_indices: list[int] = []
-        self._run_completion_message = "Run complete"
-        self._run_status_verb = "Running"
-        self._stop_event = threading.Event()
-        self._worker: threading.Thread | None = None
+        self._active_session: RunSession | None = None
+        self._parallel_sessions: dict[str, RunSession] = {}
+        self._run_queue: list[RunSession] = []
+        self._queue_mode = "sequential"
+        self._queue_active = False
+        self._queue_stop_requested = False
         self._listener: keyboard.GlobalHotKeys | None = None
         self._capture_listener: keyboard.Listener | None = None
         self._action_capture_mode = ""
@@ -312,6 +319,37 @@ class AutomatorController(QObject):
     @Property("QVariantList", notify=profileEntriesChanged)
     def profileEntries(self) -> list[dict[str, Any]]:
         return self._profile_entries
+
+    @Property("QVariantList", notify=runQueueChanged)
+    def runQueueEntries(self) -> list[dict[str, Any]]:
+        total = len(self._run_queue)
+        return [
+            session.as_entry(index + 1, total)
+            for index, session in enumerate(self._run_queue)
+        ]
+
+    @Property("QVariantList", notify=runQueueChanged)
+    def runQueuePaths(self) -> list[str]:
+        return [session.profile_path for session in self._run_queue]
+
+    @Property(int, notify=runQueueChanged)
+    def runQueueCount(self) -> int:
+        return len(self._run_queue)
+
+    @Property(bool, notify=runQueueRunningChanged)
+    def runQueueRunning(self) -> bool:
+        return self._queue_active
+
+    @Property(str, notify=runQueueModeChanged)
+    def runQueueMode(self) -> str:
+        return self._queue_mode
+
+    @Property(int, notify=runQueueChanged)
+    def runQueueActiveCount(self) -> int:
+        return sum(
+            session.state in {"armed", "running", "paused", "stopping"}
+            for session in self._run_queue
+        )
 
     @Slot()
     def refreshProfiles(self) -> None:
@@ -453,14 +491,22 @@ class AutomatorController(QObject):
             settings.target_executable,
         )
 
-    def _resolve_target_info(self, settings: RunSettings | None = None) -> WindowInfo:
+    def _resolve_target_info(
+        self,
+        settings: RunSettings | None = None,
+        preferred_hwnd: int | None = None,
+        remember: bool | None = None,
+    ) -> WindowInfo:
         selected_settings = settings or self._run_settings
+        selected_preference = self._target_hwnd if preferred_hwnd is None else int(preferred_hwnd)
         info = self._get_window_service().resolve_window(
             self._window_selector(selected_settings),
-            self._target_hwnd,
+            selected_preference,
         )
         self._get_window_service().ensure_usable(info.hwnd)
-        self._target_hwnd = info.hwnd
+        should_remember = settings is None if remember is None else bool(remember)
+        if should_remember:
+            self._target_hwnd = info.hwnd
         return info
 
     @staticmethod
@@ -983,11 +1029,149 @@ class AutomatorController(QObject):
     def applyRunSettings(self, data: dict[str, Any]) -> bool:
         return self._apply_run_settings(data)
 
-    def _prepare_run_target(self, actions: list[Action], action_indices: list[int], settings: RunSettings) -> int:
+    @staticmethod
+    def _path_key(path: str | Path) -> str:
+        return os.path.normcase(normalize_path(path))
+
+    def _load_profile_session(
+        self,
+        path: str | Path,
+        existing: RunSession | None = None,
+    ) -> RunSession:
+        normalized = normalize_path(path)
+        if not Path(normalized).is_file():
+            raise OSError("That profile file is no longer available.")
+        actions, settings = load_profile(normalized)
+        indexed_actions = [
+            (index, copy.deepcopy(action))
+            for index, action in enumerate(actions)
+            if action.enabled
+        ]
+        if not indexed_actions:
+            raise ValueError("Add or enable at least one action before queuing this profile.")
+        session = existing or RunSession(
+            profile_name=profile_name(normalized),
+            profile_path=normalized,
+            actions=[],
+            action_indices=[],
+            settings=copy.deepcopy(settings),
+            completion_message=f"{profile_name(normalized)} complete",
+        )
+        session.profile_name = profile_name(normalized)
+        session.profile_path = normalized
+        session.actions = [action for _, action in indexed_actions]
+        session.action_indices = [index for index, _ in indexed_actions]
+        session.settings = copy.deepcopy(settings)
+        session.completion_message = f"{session.profile_name} complete"
+        session.status_verb = "Running"
+        session.reset()
+        return session
+
+    @Slot(str, result=bool)
+    def enqueueProfile(self, path: str) -> bool:
+        if self._running or self._queue_active:
+            self.toast.emit("Stop the current run before changing the queue.", "error")
+            return False
+        normalized = normalize_path(path)
+        if (
+            self._current_profile_path
+            and self._path_key(normalized) == self._path_key(self._current_profile_path)
+            and (self._dirty or self._run_settings_pending)
+        ):
+            self.toast.emit("Save this profile before adding it to the run queue.", "error")
+            return False
+        if any(
+            self._path_key(session.profile_path) == self._path_key(normalized)
+            for session in self._run_queue
+        ):
+            self.toast.emit(f"{profile_name(normalized)} is already in the run queue.", "neutral")
+            return False
+        if len(self._run_queue) >= 50:
+            self.toast.emit("A run queue can contain up to 50 profiles.", "error")
+            return False
+        try:
+            session = self._load_profile_session(normalized)
+        except (OSError, ValueError, TypeError) as exc:
+            self.toast.emit(f"Could not queue {profile_name(normalized)}: {exc}", "error")
+            return False
+        self._run_queue.append(session)
+        self.runQueueChanged.emit()
+        self.toast.emit(f"Queued {session.profile_name}", "success")
+        return True
+
+    @Slot(result=bool)
+    def enqueueCurrentProfile(self) -> bool:
+        if not self._current_profile_path:
+            self.toast.emit("Save this profile before adding it to the run queue.", "error")
+            return False
+        return self.enqueueProfile(self._current_profile_path)
+
+    @Slot(str, result=bool)
+    def setRunQueueMode(self, mode: str) -> bool:
+        normalized = str(mode).strip().casefold()
+        if normalized not in {"sequential", "parallel"}:
+            return False
+        if self._running or self._queue_active:
+            self.toast.emit("Stop the queue before changing its run mode.", "error")
+            return False
+        if normalized == self._queue_mode:
+            return True
+        self._queue_mode = normalized
+        self.runQueueModeChanged.emit()
+        return True
+
+    @Slot(int, result=bool)
+    def removeQueuedProfile(self, index: int) -> bool:
+        if self._running or self._queue_active or not 0 <= index < len(self._run_queue):
+            return False
+        removed = self._run_queue.pop(index)
+        self.runQueueChanged.emit()
+        self.toast.emit(f"Removed {removed.profile_name} from the queue", "neutral")
+        return True
+
+    @Slot(int, int, result=bool)
+    def moveQueuedProfile(self, index: int, delta: int) -> bool:
+        target = int(index) + int(delta)
+        if (
+            self._running
+            or self._queue_active
+            or not 0 <= index < len(self._run_queue)
+            or not 0 <= target < len(self._run_queue)
+        ):
+            return False
+        session = self._run_queue.pop(index)
+        self._run_queue.insert(target, session)
+        self.runQueueChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    def clearRunQueue(self) -> bool:
+        if self._running or self._queue_active:
+            self.toast.emit("Stop the queue before clearing it.", "error")
+            return False
+        if not self._run_queue:
+            return False
+        self._run_queue.clear()
+        self.runQueueChanged.emit()
+        self.toast.emit("Run queue cleared", "neutral")
+        return True
+
+    def _prepare_run_target(
+        self,
+        actions: list[Action],
+        action_indices: list[int],
+        settings: RunSettings,
+        preferred_hwnd: int = 0,
+        remember_target: bool = False,
+    ) -> int:
         mouse_kinds = {"left_click", "right_click", "double_click", "middle_click", "scroll", "drag"}
         expected_space = "window" if settings.target_mode == "window" else "screen"
         for sequence_index, action in enumerate(actions):
             if action.kind not in mouse_kinds or action.coordinate_space == expected_space:
+                continue
+            if action.use_current_pointer:
+                # The click follows the live pointer, so it has no recorded
+                # position that could belong to the wrong target.
                 continue
             source_index = action_indices[sequence_index] if sequence_index < len(action_indices) else sequence_index
             destination = "the selected window" if expected_space == "window" else "the desktop"
@@ -999,7 +1183,95 @@ class AutomatorController(QObject):
             return 0
         if not self._window_selector(settings).selected:
             raise WindowTargetError("Choose a target window in Run settings before starting background mode.")
-        return self._resolve_target_info(settings).hwnd
+        return self._resolve_target_info(
+            settings,
+            preferred_hwnd=preferred_hwnd,
+            remember=remember_target,
+        ).hwnd
+
+    def _validate_run_payload(
+        self,
+        actions: list[Action],
+        action_indices: list[int],
+        settings: RunSettings,
+        reserved_shortcuts: set[str] | None = None,
+        preferred_hwnd: int = 0,
+        remember_target: bool = False,
+    ) -> int:
+        if not actions:
+            raise ValueError("Add or enable at least one action before starting.")
+        settings.validate()
+        if reserved_shortcuts is None:
+            reserved_shortcuts = canonical_global_shortcuts(
+                (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+            )
+        for action in actions:
+            action.validate(reserved_shortcuts)
+        return self._prepare_run_target(
+            actions,
+            action_indices,
+            settings,
+            preferred_hwnd=preferred_hwnd,
+            remember_target=remember_target,
+        )
+
+    def _queue_reserved_shortcuts(self) -> set[str]:
+        return self._reserved_shortcuts() | {"f9"}
+
+    def _session_is_queued(self, session: RunSession) -> bool:
+        return any(queued is session for queued in self._run_queue)
+
+    def _session_by_id(self, session_id: str) -> RunSession | None:
+        if self._active_session is not None and self._active_session.session_id == session_id:
+            return self._active_session
+        return self._parallel_sessions.get(session_id)
+
+    def _is_parallel_session(self, session: RunSession) -> bool:
+        """Report how this session actually runs, not which mode is selected.
+
+        ``_queue_mode`` is a preference that survives while the app is idle, so a
+        plain single run can happen with "parallel" still chosen.  Only sessions
+        registered in ``_parallel_sessions`` share the aggregate status line.
+        """
+        return session.session_id in self._parallel_sessions
+
+    def _start_session(self, session: RunSession, parallel: bool = False) -> bool:
+        if parallel:
+            if self._active_session is not None or session.session_id in self._parallel_sessions:
+                return False
+        elif self._active_session is not None or self._parallel_sessions:
+            return False
+        self.cancelPositionCapture(announce=False)
+        self.cancelWindowPick(announce=False)
+        session.stop_event.clear()
+        session.pause_event.clear()
+        session.state = "armed"
+        session.status = "Armed"
+        session.tone = "accent"
+        session.progress = 0.0
+        session.running_action_index = -1
+        session.error = ""
+        if parallel:
+            self._parallel_sessions[session.session_id] = session
+        else:
+            self._active_session = session
+        self._set_running_action_index(-1)
+        self._set_running(True)
+        if not parallel:
+            self._set_status(
+                f"{session.profile_name} · Armed" if self._queue_active else "Armed",
+                "accent",
+            )
+            self._set_progress(0.0)
+        session.worker = threading.Thread(
+            target=self._run_worker,
+            args=(session,),
+            daemon=True,
+        )
+        if self._session_is_queued(session):
+            self.runQueueChanged.emit()
+        session.worker.start()
+        return True
 
     def _begin_run(
         self,
@@ -1009,40 +1281,33 @@ class AutomatorController(QObject):
         completion_message: str,
         status_verb: str = "Running",
     ) -> bool:
-        if self._running:
+        if self._running or self._queue_active:
             return False
-        if not actions:
-            self.toast.emit("Add or enable at least one action before starting.", "error")
-            return False
-        target_hwnd = 0
         try:
-            settings.validate()
-            reserved_shortcuts = canonical_global_shortcuts(
-                (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+            target_hwnd = self._validate_run_payload(
+                actions,
+                action_indices,
+                settings,
+                preferred_hwnd=self._target_hwnd,
+                remember_target=True,
             )
-            for action in actions:
-                action.validate(reserved_shortcuts)
-            target_hwnd = self._prepare_run_target(actions, action_indices, settings)
         except (ValueError, WindowTargetError) as exc:
             self.toast.emit(str(exc), "error")
             return False
-        self.cancelPositionCapture(announce=False)
-        self.cancelWindowPick(announce=False)
-        self._stop_event.clear()
-        self._run_action_indices = action_indices
-        self._run_completion_message = completion_message
-        self._run_status_verb = status_verb
-        self._set_running_action_index(-1)
-        self._set_running(True)
-        self._set_status("Armed", "accent")
-        self._set_progress(0.0)
-        self._worker = threading.Thread(
-            target=self._run_worker,
-            args=(actions, copy.deepcopy(settings), target_hwnd),
-            daemon=True,
+        session = RunSession(
+            profile_name=self._current_profile_name,
+            profile_path=self._current_profile_path or "",
+            actions=copy.deepcopy(actions),
+            action_indices=list(action_indices),
+            settings=copy.deepcopy(settings),
+            completion_message=completion_message,
+            status_verb=status_verb,
+            target_hwnd=target_hwnd,
+            reserved_shortcuts=canonical_global_shortcuts(
+                (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey)
+            ),
         )
-        self._worker.start()
-        return True
+        return self._start_session(session)
 
     def _run_from_index(self, index: int = 0) -> bool:
         index = max(0, int(index))
@@ -1064,6 +1329,101 @@ class AutomatorController(QObject):
             self.toast.emit("Apply the edited Run settings before using the global Start shortcut.", "error")
             return
         self._run_from_index(0)
+
+    @Slot(result=bool)
+    def startRunQueue(self) -> bool:
+        if self._running or self._queue_active:
+            self.toast.emit("A run is already active.", "error")
+            return False
+        if not self._run_queue:
+            self.toast.emit("Add at least one saved profile to the run queue.", "error")
+            return False
+        if self._queue_mode == "parallel" and len(self._run_queue) < 2:
+            self.toast.emit("Parallel mode needs at least two background-window profiles.", "error")
+            return False
+        if self._queue_mode == "parallel" and len(self._run_queue) > MAX_PARALLEL_SESSIONS:
+            self.toast.emit(
+                f"Parallel mode can run up to {MAX_PARALLEL_SESSIONS} profiles at once.",
+                "error",
+            )
+            return False
+
+        problem: tuple[RunSession, str] | None = None
+        reserved_shortcuts = self._queue_reserved_shortcuts()
+        resolved_targets: dict[int, list[RunSession]] = {}
+        for index, session in enumerate(self._run_queue):
+            try:
+                self._load_profile_session(session.profile_path, existing=session)
+                if (
+                    self._queue_mode == "sequential"
+                    and session.settings.repeat_forever
+                    and index < len(self._run_queue) - 1
+                ):
+                    raise ValueError(
+                        "A profile that loops indefinitely must be last in the queue."
+                    )
+                if self._queue_mode == "parallel" and session.settings.target_mode != "window":
+                    raise ValueError(
+                        "Parallel mode supports background-window profiles only."
+                    )
+                session.target_hwnd = self._validate_run_payload(
+                    session.actions,
+                    session.action_indices,
+                    session.settings,
+                    reserved_shortcuts=reserved_shortcuts,
+                )
+                session.reserved_shortcuts = set(reserved_shortcuts)
+                if self._queue_mode == "parallel":
+                    self._get_window_service().ensure_responsive(session.target_hwnd)
+                    resolved_targets.setdefault(session.target_hwnd, []).append(session)
+            except (OSError, ValueError, TypeError, WindowTargetError) as exc:
+                session.state = "error"
+                session.status = "Needs attention"
+                session.tone = "danger"
+                session.error = str(exc)
+                problem = problem or (session, str(exc))
+
+        if self._queue_mode == "parallel":
+            for sessions in resolved_targets.values():
+                if len(sessions) < 2:
+                    continue
+                names = " and ".join(session.profile_name for session in sessions[:2])
+                message = (
+                    f"{names} resolve to the same target window. "
+                    "Choose a different window for one profile."
+                )
+                for session in sessions:
+                    session.state = "error"
+                    session.status = "Target conflict"
+                    session.tone = "danger"
+                    session.error = message
+                problem = problem or (sessions[0], message)
+
+        self.runQueueChanged.emit()
+        if problem is not None:
+            session, message = problem
+            self._set_status("Queue needs attention", "danger")
+            self.toast.emit(f"{session.profile_name}: {message}", "error")
+            return False
+
+        if self._hotkeys_enabled and not self._install_hotkeys(
+            self._run_settings,
+            queue_stop=True,
+        ):
+            self._set_status("Queue could not start", "danger")
+            return False
+
+        self.cancelPositionCapture(announce=False)
+        self.cancelWindowPick(announce=False)
+        self._queue_stop_requested = False
+        self._queue_active = True
+        self.runQueueRunningChanged.emit()
+        self._set_running(True)
+        self._set_status("Starting queue", "accent")
+        self._set_progress(0.0)
+        if self._queue_mode == "parallel":
+            return self._start_parallel_queue()
+        return self._start_next_queued_session()
 
     @Slot("QVariantMap", result=bool)
     def startRunWithSettings(self, data: dict[str, Any]) -> bool:
@@ -1122,49 +1482,434 @@ class AutomatorController(QObject):
     def queueStop(self) -> None:
         self.hotkeyStopRequested.emit()
 
-    def _run_worker(self, actions: list[Action], settings: RunSettings, target_hwnd: int = 0) -> None:
+    def _start_parallel_queue(self) -> bool:
+        if not self._queue_active or self._queue_mode != "parallel":
+            return False
+        started = 0
+        for session in self._run_queue:
+            if session.state == "queued" and self._start_session(session, parallel=True):
+                started += 1
+        if started == 0:
+            self._queue_active = False
+            self.runQueueRunningChanged.emit()
+            self._set_running(False)
+            self._restore_standard_hotkeys()
+            return False
+        self._update_parallel_status()
+        return True
+
+    def _update_parallel_status(self) -> None:
+        active = len(self._parallel_sessions)
+        paused = sum(session.pause_event.is_set() for session in self._parallel_sessions.values())
+        if active == 0:
+            return
+        if paused == active:
+            self._set_status(f"{active} profiles paused", "accent")
+        elif paused:
+            self._set_status(f"{active - paused} running · {paused} paused", "success")
+        else:
+            self._set_status(
+                f"{active} profile{'s' if active != 1 else ''} running in parallel",
+                "success",
+            )
+
+        progress_values = []
+        indefinite = False
+        for session in self._run_queue:
+            if session.state == "complete":
+                progress_values.append(1.0)
+            elif session.state in {"armed", "running", "paused", "stopping"}:
+                if session.progress < 0:
+                    indefinite = True
+                else:
+                    progress_values.append(max(0.0, min(1.0, session.progress)))
+            elif session.state in {"error", "stopped", "cancelled"}:
+                progress_values.append(0.0)
+        self._set_progress(
+            -1.0
+            if indefinite
+            else sum(progress_values) / max(1, len(self._run_queue))
+        )
+
+    def _start_next_queued_session(self) -> bool:
+        if (
+            not self._queue_active
+            or self._queue_mode != "sequential"
+            or self._active_session is not None
+        ):
+            return False
+        session = next(
+            (candidate for candidate in self._run_queue if candidate.state == "queued"),
+            None,
+        )
+        if session is None:
+            stopped = self._queue_stop_requested
+            self._queue_active = False
+            self.runQueueRunningChanged.emit()
+            self._set_running(False)
+            self._set_status(
+                "Queue stopped" if stopped else "Queue complete",
+                "danger" if stopped else "success",
+            )
+            self._set_progress(0.0 if stopped else 1.0)
+            self.toast.emit(
+                "Queue stopped safely"
+                if stopped
+                else f"Queue complete · {len(self._run_queue)} profiles",
+                "neutral" if stopped else "success",
+            )
+            self._queue_stop_requested = False
+            self._restore_standard_hotkeys()
+            return True
+        return self._start_session(session)
+
+    def _run_worker(self, session: RunSession) -> None:
         try:
             backend = (
-                WindowMessageBackend(target_hwnd, self._get_window_service())
-                if settings.target_mode == "window"
+                WindowMessageBackend(session.target_hwnd, self._get_window_service())
+                if session.settings.target_mode == "window"
                 else pyautogui
             )
-            complete = AutomationRunner(backend).run(actions, settings, self._stop_event, self.progressFromWorker.emit)
-            self.finishedFromWorker.emit(complete, self._run_completion_message if complete else "Stopped safely")
+            complete = AutomationRunner(backend).run(
+                session.actions,
+                session.settings,
+                session.stop_event,
+                lambda phase, current, total: self.progressFromWorker.emit(
+                    session.session_id,
+                    phase,
+                    current,
+                    total,
+                ),
+                session.pause_event,
+                session.reserved_shortcuts or None,
+            )
+            self.finishedFromWorker.emit(
+                session.session_id,
+                complete,
+                session.completion_message if complete else "Stopped safely",
+            )
         except pyautogui.FailSafeException:
-            self.finishedFromWorker.emit(False, "Stopped by corner fail-safe")
+            self.finishedFromWorker.emit(
+                session.session_id,
+                False,
+                "Stopped by corner fail-safe",
+            )
         except Exception as exc:
-            self.finishedFromWorker.emit(False, f"Automation error: {exc}")
+            self.finishedFromWorker.emit(
+                session.session_id,
+                False,
+                f"Automation error: {exc}",
+            )
 
     @Slot()
     def stopRun(self) -> None:
-        self._stop_event.set()
-        if self._running:
-            self._set_status("Stopping", "danger")
+        if self._queue_active:
+            self.stopAllRuns()
+            return
+        session = self._active_session
+        if session is None:
+            return
+        session.stop_event.set()
+        session.state = "stopping"
+        session.status = "Stopping"
+        session.tone = "danger"
+        self._set_status("Stopping", "danger")
 
-    @Slot(str, int, int)
-    def _handle_progress(self, phase: str, current: int, total: int) -> None:
-        if phase == "timer":
-            self._set_status("Countdown", "accent")
-            self._set_progress(0.0)
-        elif phase == "action":
-            if 0 <= current < len(self._run_action_indices):
-                source_index = self._run_action_indices[current]
-                self._set_running_action_index(source_index)
-                self._set_status(f"{self._run_status_verb} step {source_index + 1}", "success")
+    @Slot(str, result=bool)
+    def stopRunSession(self, session_id: str) -> bool:
+        session = self._session_by_id(str(session_id))
+        if session is None or session.state not in {"armed", "running", "paused"}:
+            return False
+        session.stop_requested_by_user = True
+        session.pause_event.clear()
+        session.stop_event.set()
+        session.state = "stopping"
+        session.status = "Stopping"
+        session.tone = "danger"
+        self.runQueueChanged.emit()
+        if self._is_parallel_session(session):
+            self._update_parallel_status()
         else:
-            self._set_status(self._run_status_verb, "success")
-            self._set_progress(-1.0 if total == 0 else current / total)
+            self._set_status(f"Stopping {session.profile_name}", "danger")
+        return True
 
-    @Slot(bool, str)
-    def _finish_run(self, complete: bool, message: str) -> None:
+    @Slot(str, result=bool)
+    def toggleRunSessionPaused(self, session_id: str) -> bool:
+        session = self._session_by_id(str(session_id))
+        if session is None or session.state not in {"armed", "running", "paused"}:
+            return False
+        if session.pause_event.is_set():
+            session.pause_event.clear()
+            session.state = "running"
+            session.status = "Resuming"
+            session.tone = "success"
+        else:
+            session.pause_event.set()
+            session.state = "paused"
+            session.status = "Paused"
+            session.tone = "accent"
+        self.runQueueChanged.emit()
+        if self._is_parallel_session(session):
+            self._update_parallel_status()
+        else:
+            self._set_status(
+                f"{session.profile_name} · {session.status}",
+                session.tone,
+            )
+        return True
+
+    @Slot()
+    def stopAllRuns(self) -> None:
+        if not self._queue_active:
+            self.stopRun()
+            return
+        self._queue_stop_requested = True
+        for session in self._run_queue:
+            if session.state == "queued":
+                session.state = "cancelled"
+                session.status = "Not run"
+                session.tone = "neutral"
+        active_sessions = list(self._parallel_sessions.values())
+        if self._active_session is not None:
+            active_sessions.append(self._active_session)
+        for session in active_sessions:
+            session.pause_event.clear()
+            session.stop_event.set()
+            session.state = "stopping"
+            session.status = "Stopping"
+            session.tone = "danger"
+        self._set_status("Stopping queue", "danger")
+        self.runQueueChanged.emit()
+
+    @Slot(str, str, int, int)
+    def _handle_progress(
+        self,
+        session_id: str,
+        phase: str,
+        current: int,
+        total: int,
+    ) -> None:
+        session = self._session_by_id(session_id)
+        if session is None:
+            return
+        parallel_session = self._is_parallel_session(session)
+        if session.stop_event.is_set() or session.state == "stopping":
+            session.state = "stopping"
+            session.status = "Stopping"
+            session.tone = "danger"
+            if self._session_is_queued(session):
+                self.runQueueChanged.emit()
+            return
+        if session.pause_event.is_set():
+            session.state = "paused"
+            session.status = "Paused"
+            session.tone = "accent"
+            if self._session_is_queued(session):
+                self.runQueueChanged.emit()
+            if parallel_session:
+                self._update_parallel_status()
+            return
+        if phase == "timer":
+            session.state = "armed"
+            session.status = "Countdown"
+            session.tone = "accent"
+            session.progress = 0.0
+            if not parallel_session:
+                self._set_status(
+                    f"{session.profile_name} · Countdown" if self._queue_active else "Countdown",
+                    "accent",
+                )
+                self._set_progress(0.0)
+        elif phase == "action":
+            if 0 <= current < len(session.action_indices):
+                source_index = session.action_indices[current]
+                session.state = "running"
+                session.status = f"Step {source_index + 1}"
+                session.tone = "success"
+                session.running_action_index = source_index
+                same_profile = bool(
+                    session.profile_path
+                    and self._current_profile_path
+                    and self._path_key(session.profile_path)
+                    == self._path_key(self._current_profile_path)
+                )
+                self._set_running_action_index(
+                    source_index
+                    if not self._queue_active
+                    or (not parallel_session and same_profile)
+                    else -1
+                )
+                status = f"{session.status_verb} step {source_index + 1}"
+                if self._queue_active and not parallel_session:
+                    status = f"{session.profile_name} · {status}"
+                if not parallel_session:
+                    self._set_status(status, "success")
+        else:
+            session.state = "running"
+            session.status = "Running" if total == 0 else f"Cycle {current} of {total}"
+            session.tone = "success"
+            session.progress = -1.0 if total == 0 else current / total
+            if not parallel_session:
+                status = session.status_verb
+                if self._queue_active:
+                    status = f"{session.profile_name} · {session.status}"
+                self._set_status(status, "success")
+                self._set_progress(session.progress)
+        if self._session_is_queued(session):
+            self.runQueueChanged.emit()
+        if parallel_session:
+            self._update_parallel_status()
+
+    @Slot(str, bool, str)
+    def _finish_run(self, session_id: str, complete: bool, message: str) -> None:
+        session = self._session_by_id(session_id)
+        if session is None:
+            return
+        parallel_session = self._is_parallel_session(session)
+        queued_session = self._queue_active and self._session_is_queued(session)
         failed = message.startswith("Automation error:")
+        session.worker = None
+        session.pause_event.clear()
+        session.running_action_index = -1
+        session.progress = 1.0 if complete else 0.0
+        if complete:
+            session.state = "complete"
+            session.status = "Complete"
+            session.tone = "success"
+        elif failed:
+            session.state = "error"
+            session.status = "Error"
+            session.tone = "danger"
+            session.error = message.removeprefix("Automation error:").strip()
+        else:
+            session.state = "stopped"
+            session.status = "Stopped"
+            session.tone = "danger"
         self._set_running_action_index(-1)
-        self._run_action_indices = []
+        if parallel_session:
+            self._parallel_sessions.pop(session_id, None)
+        elif self._active_session is session:
+            self._active_session = None
+
+        if queued_session and parallel_session:
+            self.runQueueChanged.emit()
+            if failed:
+                self.toast.emit(f"{session.profile_name}: {message}", "error")
+            if self._parallel_sessions:
+                self._update_parallel_status()
+                return
+
+            self._queue_active = False
+            self.runQueueRunningChanged.emit()
+            self._set_running(False)
+            errors = sum(candidate.state == "error" for candidate in self._run_queue)
+            stopped = sum(candidate.state == "stopped" for candidate in self._run_queue)
+            if self._queue_stop_requested:
+                self._set_status("Parallel run stopped", "danger")
+                self._set_progress(0.0)
+                self.toast.emit("All parallel profiles stopped safely", "neutral")
+            elif errors:
+                self._set_status(
+                    f"Parallel run finished with {errors} error{'s' if errors != 1 else ''}",
+                    "danger",
+                )
+                self._set_progress(0.0)
+            elif stopped:
+                self._set_status(
+                    f"Parallel run complete · {stopped} stopped",
+                    "accent",
+                )
+                self._set_progress(1.0)
+                self.toast.emit("Parallel run finished", "neutral")
+            else:
+                self._set_status("Parallel run complete", "success")
+                self._set_progress(1.0)
+                self.toast.emit(
+                    f"Parallel run complete · {len(self._run_queue)} profiles",
+                    "success",
+                )
+            self._queue_stop_requested = False
+            self._restore_standard_hotkeys()
+            return
+
+        if queued_session:
+            self.runQueueChanged.emit()
+            next_session = next(
+                (candidate for candidate in self._run_queue if candidate.state == "queued"),
+                None,
+            )
+            if complete and not self._queue_stop_requested and next_session is not None:
+                self._set_status(f"{session.profile_name} complete", "success")
+                QTimer.singleShot(0, self._start_next_queued_session)
+                return
+            if (
+                not complete
+                and not failed
+                and session.stop_requested_by_user
+                and not self._queue_stop_requested
+                and next_session is not None
+            ):
+                self._set_status(f"{session.profile_name} stopped · Continuing queue", "accent")
+                QTimer.singleShot(0, self._start_next_queued_session)
+                return
+
+            if not complete:
+                for pending in self._run_queue:
+                    if pending.state == "queued":
+                        pending.state = "cancelled"
+                        pending.status = "Not run"
+                        pending.tone = "neutral"
+                self.runQueueChanged.emit()
+
+            self._queue_active = False
+            self.runQueueRunningChanged.emit()
+            self._set_running(False)
+            stopped_count = sum(
+                candidate.state == "stopped" for candidate in self._run_queue
+            )
+            if complete:
+                self._set_status(
+                    f"Queue complete · {stopped_count} stopped"
+                    if stopped_count
+                    else "Queue complete",
+                    "accent" if stopped_count else "success",
+                )
+                self._set_progress(1.0)
+                self.toast.emit(
+                    "Queue finished"
+                    if stopped_count
+                    else f"Queue complete · {len(self._run_queue)} profiles",
+                    "neutral" if stopped_count else "success",
+                )
+            elif failed:
+                self._set_status("Queue error", "danger")
+                self._set_progress(0.0)
+                self.toast.emit(f"{session.profile_name}: {message}", "error")
+            elif session.stop_requested_by_user and not self._queue_stop_requested:
+                self._set_status(
+                    f"Queue complete · {max(1, stopped_count)} stopped",
+                    "accent",
+                )
+                self._set_progress(1.0)
+                self.toast.emit("Queue finished", "neutral")
+            else:
+                self._set_status("Queue stopped", "danger")
+                self._set_progress(0.0)
+                self.toast.emit("Queue stopped safely", "neutral")
+            self._queue_stop_requested = False
+            self._restore_standard_hotkeys()
+            return
+
         self._set_running(False)
-        self._set_status("Complete" if complete else "Error" if failed else "Stopped", "success" if complete else "danger")
+        self._set_status(
+            "Complete" if complete else "Error" if failed else "Stopped",
+            "success" if complete else "danger",
+        )
         self._set_progress(1.0 if complete else 0.0)
-        self.toast.emit(message, "success" if complete else "error" if failed else "neutral")
+        self.toast.emit(
+            message,
+            "success" if complete else "error" if failed else "neutral",
+        )
 
     def _set_running(self, value: bool) -> None:
         if self._running != value:
@@ -1638,7 +2383,11 @@ class AutomatorController(QObject):
     def _pynput_hotkey(value: str) -> str:
         return pynput_hotkey(value)
 
-    def _install_hotkeys(self, settings: RunSettings) -> bool:
+    def _install_hotkeys(
+        self,
+        settings: RunSettings,
+        queue_stop: bool = False,
+    ) -> bool:
         """Start a replacement before retiring known-good shortcuts."""
         try:
             mapping = {
@@ -1646,6 +2395,8 @@ class AutomatorController(QObject):
                 self._pynput_hotkey(settings.capture_hotkey): self.queueCapture,
                 self._pynput_hotkey(settings.stop_hotkey): self.queueStop,
             }
+            if queue_stop:
+                mapping[self._pynput_hotkey("f9")] = self.queueStop
             replacement = keyboard.GlobalHotKeys(mapping)
             replacement.start()
         except Exception as exc:
@@ -1661,9 +2412,20 @@ class AutomatorController(QObject):
     def _restart_hotkeys(self) -> bool:
         return self._install_hotkeys(self._run_settings)
 
+    def _restore_standard_hotkeys(self) -> None:
+        if self._hotkeys_enabled:
+            self._restart_hotkeys()
+
     @Slot()
     def shutdown(self) -> None:
-        self._stop_event.set()
+        if self._active_session is not None:
+            self._active_session.stop_event.set()
+        for session in self._parallel_sessions.values():
+            session.pause_event.clear()
+            session.stop_event.set()
+        self._parallel_sessions.clear()
+        self._queue_stop_requested = True
+        self._queue_active = False
         watched = self._profile_watcher.directories()
         if watched:
             self._profile_watcher.removePaths(watched)

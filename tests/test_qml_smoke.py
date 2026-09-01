@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject, QPoint, QPointF, QMetaObject, Qt
+from PySide6.QtCore import QObject, QPoint, QPointF, QMetaObject, Q_ARG, Qt
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -31,6 +31,16 @@ class PickerWindowService:
 
     def ensure_responsive(self, hwnd):
         return None
+
+
+def show_tab(window, index, settle=200):
+    """Switch workspace tabs exactly the way the tab bar does."""
+    assert QMetaObject.invokeMethod(
+        window, "selectTab", Qt.DirectConnection, Q_ARG("QVariant", index)
+    )
+    _app.processEvents()
+    QTest.qWait(settle)
+    assert window.property("activeTab") == index
 
 
 def visual_children_named(item, prefix):
@@ -105,15 +115,58 @@ def test_header_status_badge_aligns_with_the_sequence_heading():
 def test_workspace_navigation_hover_state_is_isolated_per_button():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
-    buttons = [window.findChild(QQuickItem, f"workspaceNav_{name}") for name in ("open", "save", "new")]
+    buttons = [window.findChild(QQuickItem, f"workspaceNav_{name}") for name in ("save", "new")]
     assert all(button is not None for button in buttons)
     for hovered_index, button in enumerate(buttons):
         for index, item in enumerate(buttons):
             item.setProperty("pointerHover", index == hovered_index)
         _app.processEvents()
         QTest.qWait(160)
-        assert [item.property("pointerHover") for item in buttons] == [index == hovered_index for index in range(3)]
+        assert [item.property("pointerHover") for item in buttons] == [
+            index == hovered_index for index in range(len(buttons))
+        ]
         assert button.property("background").property("color").name() == "#e5eaf2"
+    window.close()
+    controller.shutdown()
+
+
+def test_workspace_tabs_switch_pages_and_collapse_labels_when_narrow():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(1360)
+    window.setHeight(840)
+    _app.processEvents()
+
+    tabs = [
+        window.findChild(QQuickItem, f"workspaceTab_{name}")
+        for name in ("sequence", "profiles", "runner")
+    ]
+    stack = window.findChild(QQuickItem, "workspaceStack")
+    inspector_pane = window.findChild(QQuickItem, "runInspector")
+    assert all(tab is not None for tab in tabs) and stack is not None
+
+    # Exactly one tab reads as selected, and it tracks the visible page.
+    for index in (0, 1, 2):
+        show_tab(window, index, settle=120)
+        assert [tab.property("selected") for tab in tabs] == [
+            position == index for position in range(3)
+        ]
+        assert stack.property("currentIndex") == index
+        if inspector_pane is not None:
+            # The inspector edits the sequence, so it only rides along with that tab.
+            assert inspector_pane.isVisible() is (index == 0)
+
+    show_tab(window, 0, settle=120)
+    wide_widths = [tab.width() for tab in tabs]
+
+    window.setWidth(960)
+    _app.processEvents()
+    QTest.qWait(120)
+    assert window.property("layoutMode") == "compact"
+    narrow_widths = [tab.width() for tab in tabs]
+    for wide, narrow in zip(wide_widths, narrow_widths):
+        assert narrow < wide
+
     window.close()
     controller.shutdown()
 
@@ -124,7 +177,7 @@ def test_quiet_button_hover_fades_from_the_hover_surface_without_a_dark_flash():
     window.setWidth(1920)
     window.setHeight(1016)
     _app.processEvents()
-    button = window.findChild(QQuickItem, "workspaceNav_open")
+    button = window.findChild(QQuickItem, "workspaceNav_save")
     assert button is not None
     background = button.property("background")
     QTest.qWait(160)
@@ -376,19 +429,22 @@ def test_profile_library_switches_profiles_and_protects_unsaved_changes(tmp_path
         profile_directory=tmp_path,
     )
     window = engine.rootObjects()[0]
-    drawer = window.findChild(QObject, "profileLibraryDrawer")
+    page = window.findChild(QQuickItem, "profileLibraryPage")
     unsaved = window.findChild(QObject, "unsavedChangesDialog")
-    assert drawer is not None and unsaved is not None
-    QMetaObject.invokeMethod(drawer, "open", Qt.DirectConnection)
-    QTest.qWait(280)
+    assert page is not None and unsaved is not None
+    show_tab(window, 1, settle=280)
 
+    runner = window.findChild(QQuickItem, "profileLibraryRunnerButton")
     save_as = window.findChild(QQuickItem, "profileLibrarySaveAsButton")
     open_file = window.findChild(QQuickItem, "profileLibraryOpenFileButton")
-    assert save_as is not None and open_file is not None
+    assert runner is not None and save_as is not None and open_file is not None
+    assert abs(runner.width() - 112) < 0.1
     assert abs(save_as.width() - 112) < 0.1
     assert abs(open_file.width() - 112) < 0.1
+    runner_position = runner.mapToScene(QPointF(0, 0))
     save_position = save_as.mapToScene(QPointF(0, 0))
     open_position = open_file.mapToScene(QPointF(0, 0))
+    assert save_position.x() - (runner_position.x() + runner.width()) >= 7
     assert open_position.x() - (save_position.x() + save_as.width()) >= 7
 
     rows = visual_children_named(window.contentItem(), "profileLibraryRow_")
@@ -399,12 +455,11 @@ def test_profile_library_switches_profiles_and_protects_unsaved_changes(tmp_path
     QMetaObject.invokeMethod(first_row, "click", Qt.DirectConnection)
     QTest.qWait(220)
     assert controller.currentProfileName == "First sequence"
-    assert drawer.property("opened") is False
+    assert window.property("activeTab") == 0
 
     controller.addAction({"kind": "key", "value": "x"})
     assert controller.dirty is True
-    QMetaObject.invokeMethod(drawer, "open", Qt.DirectConnection)
-    QTest.qWait(280)
+    show_tab(window, 1, settle=280)
     rows = visual_children_named(window.contentItem(), "profileLibraryRow_")
     second_row = next(
         row for row in rows if row.property("profilePath") == str(second_path.resolve())
@@ -421,7 +476,135 @@ def test_profile_library_switches_profiles_and_protects_unsaved_changes(tmp_path
     QTest.qWait(240)
     assert controller.currentProfileName == "Second sequence"
     assert [action.value for action in controller.actions] == ["b"]
-    assert drawer.property("opened") is False
+    assert window.property("activeTab") == 0
+    window.close()
+    controller.shutdown()
+
+
+def test_profiles_can_be_queued_without_switching_and_reordered_in_runner(tmp_path):
+    first_path = tmp_path / "First sequence.kca.json"
+    second_path = tmp_path / "Second sequence.kca.json"
+    qt_controller.save_profile(
+        first_path,
+        [qt_controller.Action("key", value="a")],
+        qt_controller.RunSettings(),
+    )
+    qt_controller.save_profile(
+        second_path,
+        [qt_controller.Action("key", value="b")],
+        qt_controller.RunSettings(),
+    )
+    engine, controller = build_engine(
+        start_hotkeys=False,
+        profile_directory=tmp_path,
+    )
+    window = engine.rootObjects()[0]
+    profile_page = window.findChild(QQuickItem, "profileLibraryPage")
+    queue_page = window.findChild(QQuickItem, "runQueuePage")
+    assert profile_page is not None and queue_page is not None
+    show_tab(window, 1, settle=240)
+
+    rows = visual_children_named(window.contentItem(), "profileLibraryRow_")
+    first_row = next(
+        row for row in rows if row.property("profilePath") == str(first_path.resolve())
+    )
+    second_row = next(
+        row for row in rows if row.property("profilePath") == str(second_path.resolve())
+    )
+    first_index = first_row.objectName().removeprefix("profileLibraryRow_")
+    second_index = second_row.objectName().removeprefix("profileLibraryRow_")
+    first_queue = visual_children_named(
+        window.contentItem(), "queueProfileButton_" + first_index
+    )[0]
+    second_queue = visual_children_named(
+        window.contentItem(), "queueProfileButton_" + second_index
+    )[0]
+
+    QMetaObject.invokeMethod(first_queue, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.runQueuePaths == [str(first_path.resolve())]
+    assert controller.currentProfileName == "Untitled sequence"
+    assert window.property("activeTab") == 1
+    assert first_queue.property("text") == "Queued"
+
+    QMetaObject.invokeMethod(second_queue, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.runQueueCount == 2
+    runner_button = window.findChild(QQuickItem, "profileLibraryRunnerButton")
+    assert runner_button is not None
+    QMetaObject.invokeMethod(runner_button, "click", Qt.DirectConnection)
+    QTest.qWait(600)
+    assert window.property("activeTab") == 2
+
+    parallel_mode = window.findChild(QQuickItem, "runQueueParallelModeButton")
+    sequential_mode = window.findChild(QQuickItem, "runQueueSequentialModeButton")
+    assert parallel_mode is not None and sequential_mode is not None
+    QMetaObject.invokeMethod(parallel_mode, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.runQueueMode == "parallel"
+    assert parallel_mode.property("activeNeutral") is True
+    QMetaObject.invokeMethod(sequential_mode, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.runQueueMode == "sequential"
+
+    cards = visual_children_named(window.contentItem(), "runQueueCard_")
+    assert len(cards) == 2
+    assert [entry["profileName"] for entry in controller.runQueueEntries] == [
+        "First sequence",
+        "Second sequence",
+    ]
+    move_down = visual_children_named(window.contentItem(), "runQueueMoveDown_0")[0]
+    assert move_down.isEnabled()
+    QMetaObject.invokeMethod(move_down, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert [entry["profileName"] for entry in controller.runQueueEntries] == [
+        "Second sequence",
+        "First sequence",
+    ]
+
+    remove_first = visual_children_named(window.contentItem(), "runQueueRemove_0")[0]
+    QMetaObject.invokeMethod(remove_first, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.runQueuePaths == [str(first_path.resolve())]
+    window.close()
+    controller.shutdown()
+
+
+def test_run_queue_scrollbar_stays_inside_the_page_with_many_profiles(tmp_path):
+    paths = []
+    for index in range(10):
+        path = tmp_path / f"Profile {index + 1:02d}.kca.json"
+        qt_controller.save_profile(
+            path,
+            [qt_controller.Action("key", value="tab")],
+            qt_controller.RunSettings(),
+        )
+        paths.append(path)
+
+    engine, controller = build_engine(
+        start_hotkeys=False,
+        profile_directory=tmp_path,
+    )
+    for path in paths:
+        assert controller.enqueueProfile(str(path)) is True
+
+    window = engine.rootObjects()[0]
+    window.setWidth(900)
+    window.setHeight(640)
+    page = window.findChild(QQuickItem, "runQueuePage")
+    queue_list = window.findChild(QQuickItem, "runQueueList")
+    scroll_bar = window.findChild(QQuickItem, "runQueueScrollBar")
+    assert page is not None and queue_list is not None and scroll_bar is not None
+
+    show_tab(window, 2, settle=300)
+    assert scroll_bar.isVisible()
+    list_position = queue_list.mapToScene(QPointF(0, 0))
+    bar_position = scroll_bar.mapToScene(QPointF(0, 0))
+    assert bar_position.x() >= list_position.x()
+    assert bar_position.x() + scroll_bar.width() <= list_position.x() + queue_list.width()
+    assert bar_position.y() >= list_position.y()
+    assert bar_position.y() + scroll_bar.height() <= list_position.y() + queue_list.height()
+
     window.close()
     controller.shutdown()
 
@@ -572,8 +755,10 @@ def test_run_inspector_reserves_a_gutter_between_fields_and_scrollbar():
 def test_scrollbars_hide_without_overflow_and_sequence_cards_keep_a_gutter():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
+    # The inspector is boxed between the tab header and the full-width run bar, so it
+    # needs a taller window than the old edge-to-edge panel to show the form uncropped.
     window.setWidth(1360)
-    window.setHeight(840)
+    window.setHeight(960)
     controller.addAction({"kind": "left_click", "x": 0, "y": 0})
     _app.processEvents()
     QTest.qWait(80)
@@ -585,6 +770,13 @@ def test_scrollbars_hide_without_overflow_and_sequence_cards_keep_a_gutter():
     assert editor_scrollbar.property("size") == 1
     assert editor_scrollbar.isVisible() is False
     assert sequence_scrollbar.isVisible() is False
+
+    # Shrinking below the form's height brings the scrollbar back, and only then.
+    window.setHeight(800)
+    _app.processEvents()
+    QTest.qWait(80)
+    assert editor_scrollbar.property("size") < 1
+    assert editor_scrollbar.isVisible() is True
 
     window.setWidth(900)
     window.setHeight(640)
@@ -638,6 +830,84 @@ def test_click_action_can_be_added_in_follow_current_pointer_mode():
     assert controller.actions[0].kind == "left_click"
     assert controller.actions[0].use_current_pointer is True
     assert controller.actions[0].x is None
+    window.close()
+    controller.shutdown()
+
+
+def test_long_toast_messages_stay_inside_the_toast_pill():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    window.setWidth(1240)
+    window.setHeight(760)
+    _app.processEvents()
+
+    pill = window.findChild(QQuickItem, "toastPill")
+    label = window.findChild(QQuickItem, "toastText")
+    assert pill is not None and label is not None
+
+    controller.toast.emit(
+        "Untitled sequence: More than one matching target window is open. "
+        "Pick the window again.",
+        "error",
+    )
+    QTest.qWait(120)
+
+    assert pill.isVisible() is True
+    top_left = label.mapToItem(pill, QPointF(0, 0))
+    assert top_left.x() >= 0
+    assert top_left.y() >= 0
+    assert top_left.x() + label.width() <= pill.width()
+    assert top_left.y() + label.height() <= pill.height()
+    assert pill.width() <= window.width()
+    # A message this long has to wrap rather than render as one clipped line.
+    assert label.height() > label.property("font").pointSize()
+
+    window.close()
+    controller.shutdown()
+
+
+def test_window_click_can_switch_to_follow_pointer_without_recording_again():
+    """Switching a window-recorded click to Desktop + follow must not demand a re-record."""
+    engine, controller = build_engine(start_hotkeys=False)
+    controller._window_service = PickerWindowService()
+    window = engine.rootObjects()[0]
+
+    controller.setTargetMode("window")
+    controller.selectWindowTarget("1001")
+    controller.addAction(
+        {
+            "kind": "left_click",
+            "x": "300",
+            "y": "220",
+            "coordinateSpace": "window",
+            "referenceWidth": "800",
+            "referenceHeight": "600",
+        }
+    )
+    QTest.qWait(40)
+    assert controller.actions[0].coordinate_space == "window"
+
+    # The user now points the run at the desktop and wants the click to follow the mouse.
+    controller.setTargetMode("desktop")
+    controller.selectedIndex = 0
+    QTest.qWait(40)
+
+    follow_pointer = window.findChild(QQuickItem, "followPointerSwitch")
+    commit = window.findChild(QQuickItem, "actionCommitButton")
+    assert follow_pointer is not None and commit is not None
+
+    follow_pointer.setProperty("checked", True)
+    _app.processEvents()
+    assert commit.property("enabled") is True
+
+    QMetaObject.invokeMethod(commit, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+
+    saved = controller.actions[0]
+    assert saved.use_current_pointer is True
+    assert saved.coordinate_space == "screen"
+    assert saved.reference_width == 0 and saved.reference_height == 0
+    assert saved.x is None and saved.y is None
     window.close()
     controller.shutdown()
 

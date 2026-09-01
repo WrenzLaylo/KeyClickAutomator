@@ -9,6 +9,8 @@ AbstractButton {
     property bool quiet: false
     property bool activeNeutral: false
     property bool hamburgerIcon: false
+    property bool contentLeftAligned: false
+    property real leadingColumnWidth: 0
     property string leading: ""
     property string keyHint: ""
     property bool pointerHover: false
@@ -45,7 +47,9 @@ AbstractButton {
         Row {
             id: buttonContent
             spacing: 7
-            anchors.centerIn: parent
+            anchors.left: control.contentLeftAligned ? parent.left : undefined
+            anchors.horizontalCenter: control.contentLeftAligned ? undefined : parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
 
             Item {
                 visible: control.hamburgerIcon
@@ -71,7 +75,9 @@ AbstractButton {
 
             Text {
                 visible: control.leading !== ""
+                width: control.leadingColumnWidth > 0 ? control.leadingColumnWidth : implicitWidth
                 text: control.leading
+                horizontalAlignment: Text.AlignHCenter
                 color: control.enabled
                     ? (control.primary ? "white" : control.danger ? control.dangerColor : control.inkColor)
                     : control.mutedInkColor

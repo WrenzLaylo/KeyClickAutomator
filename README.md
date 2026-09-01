@@ -23,7 +23,7 @@
   <a href="#build-a-release">Build a release</a>
 </p>
 
-> Current release: **3.4.4** · Windows 10/11 · 64-bit
+> Current release: **3.5.0** · Windows 10/11 · 64-bit
 
 <p align="center">
   <img src="assets/screenshots/keyclick-main.png" alt="KeyClick Automator showing a visual sequence and the Run inspector" width="1200">
@@ -46,15 +46,16 @@ and stop the automation immediately whenever you need to.
 - Per-action repeats and delays
 - Finite runs or continuous looping
 - Saveable `.kca.json` profiles
-- Responsive desktop layout with a slide-over inspector
+- Sequential or guarded parallel runs for several saved profiles
+- Sequence, Profiles, and Runner as top-level tabs, with a docked Run inspector
 - Global shortcuts and a corner fail-safe
 
 ## Choose a build
 
 | Build | Best for | What you need |
 | --- | --- | --- |
-| `KeyClickAutomator-Portable-3.4.4.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
-| `KeyClickAutomator-Setup-3.4.4.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
+| `KeyClickAutomator-Portable-3.5.0.exe` | Carrying the app on a USB drive or running it without installation | Just the one `.exe`; Python and Qt are already bundled |
+| `KeyClickAutomator-Setup-3.5.0.exe` | A normal Windows installation with shortcuts and uninstall support | Run the installer once; it installs everything the app needs |
 
 Both builds are created in the `release` folder. The portable build is one
 standalone file. The setup download is smaller because it installs the bundled
@@ -69,7 +70,7 @@ portable app or installer exactly matches the file published with that release.
 ## Quick start
 
 1. Open KeyClick Automator.
-2. Select **Profiles** or press `Ctrl+O` to switch to a saved sequence without
+2. Open the **Profiles** tab or press `Ctrl+O` to switch to a saved sequence without
    leaving KeyClick. To start fresh, select **Create first action** or **New action**.
 3. In the **Run** inspector, keep **Desktop** for normal automation or choose
    **Background window**. The visual picker shows Desktop and the open apps on
@@ -168,7 +169,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 
 ## Profiles
 
-- **Profiles** (`Ctrl+O`) opens an in-app library of `.kca.json` profiles in the
+- The **Profiles** tab (`Ctrl+O`) is an in-app library of `.kca.json` profiles in the
   current profile folder. Select any row to switch sequences immediately.
 - The portable build starts with the folder beside its `.exe`, so profiles saved
   beside KeyClick appear automatically. **Change** can point the library elsewhere.
@@ -179,6 +180,17 @@ highlighted while automation runs. Before a long or repeating run, make sure
   to create another profile, which also becomes the library's current folder.
 - **Open file…** can load a profile from another folder; the library then follows
   that folder and lists its other profiles.
+- Select **Queue** beside any saved profile, then open the **Runner** tab to reorder
+  the profiles, watch each profile's status and progress, or remove it before starting.
+- The Multi-Profile Runner reloads each saved copy without replacing the sequence
+  open in the editor. **Sequential** runs one profile after another; a profile
+  that loops indefinitely must be last.
+- **Parallel** runs two to eight profiles together only when they target different
+  background windows. Desktop profiles, duplicate target windows, and actions that
+  conflict with the runner's global safety shortcuts are blocked before input starts.
+- Active run cards provide **Pause**, **Resume**, and **Stop**. In Parallel mode,
+  stopping one profile does not stop the others. **Stop all** or `F9` stops every
+  active profile and cancels anything still waiting.
 - The selected target mode, window identity, coordinate type, and responsive
   window-size references are saved too.
 - Unsaved edits are protected by a confirmation dialog and an automatic recovery
@@ -186,7 +198,24 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - A deleted action can be restored with **Undo** or `Ctrl+Z`.
 - Profiles created by earlier 3.x releases remain compatible.
 
-## What's new in 3.4.4
+## What's new in 3.5.0
+
+- **Multi-Profile Runner**: queue several saved profiles and run them one after
+  another, or run up to eight background-window profiles together in parallel,
+  with per-profile pause, resume, and stop
+- **Tabbed navigation**: Sequence, Profiles, and Runner are now top-level tabs
+  instead of two side drawers, so nothing slides over the sequence you are editing.
+  Save and New sequence moved into the header, and the `F6`/`F8`/`F9` hints moved
+  into the run bar
+- A run now keeps reporting its step and progress even when the Runner's mode is
+  set to Parallel; previously the status froze on "Armed" for the whole run
+- A click set to **Follow current pointer** no longer has to be recorded again
+  after switching the target from a background window to Desktop, because a
+  follow-pointer click has no saved position to correct
+- Long status messages wrap inside the toast instead of spilling past its edges
+- Profile rows keep their trailing chevron inside the card
+
+### Previous release: 3.4.4
 
 - Modified hotkeys now record the intended printable key on Windows, including
   `Ctrl+Shift+C` and `Ctrl+Alt+C`, instead of displaying a control character or
@@ -200,7 +229,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 - Window-picker scrollbar spacing now stays inside the rounded dialog even after
   fast scrolling, while its Close label remains centered
 
-### Previous release: 3.4.3
+### Earlier release: 3.4.3
 
 - Scrollbars now appear only when content overflows, and long sequence and profile
   lists reserve a clear gutter so cards never sit beneath the scroll thumb
@@ -239,6 +268,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 
 | Version | Summary |
 | --- | --- |
+| 3.5.0 | Multi-Profile Runner, tabbed navigation, and follow-pointer/target fixes |
 | 3.4.4 | Correct modified-hotkey capture, centered compact controls, and anchored sequence dragging |
 | 3.4.3 | Overflow-only scrolling, stable window picking, recorder handoff, and UI polish |
 | 3.4.2 | Complete-chord shortcut safety, earlier validation, UI containment, and project polish |
@@ -292,7 +322,7 @@ Build the single-file portable app:
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller --clean --noconfirm KeyClickAutomator.spec
 New-Item -ItemType Directory -Force release | Out-Null
-Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.4.4.exe
+Copy-Item dist\KeyClickAutomator.exe release\KeyClickAutomator-Portable-3.5.0.exe
 ```
 
 Build the installer payload, then compile it with Inno Setup 6:
@@ -315,9 +345,10 @@ Before publishing, complete every check in [RELEASING.md](RELEASING.md).
 
 | Path | Purpose |
 | --- | --- |
-| `qml/Main.qml` | Desktop screens, layout, and interaction flow |
+| `qml/Main.qml` | Tabbed desktop screens, layout, and interaction flow |
 | `qml/components/` | Shared button, field, and scrollbar styling |
 | `qt_controller.py` | UI model and run coordination |
+| `run_session.py` | Per-profile run state for the queued and parallel runners |
 | `profile_catalog.py` | Saved-profile discovery and display metadata |
 | `recovery_store.py` | Atomic recovery-draft persistence |
 | `shortcut_service.py` | Shortcut conflicts and global-listener formatting |

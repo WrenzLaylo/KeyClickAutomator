@@ -1532,3 +1532,42 @@ def test_preflight_reports_a_clean_desktop_sequence_as_runnable():
     assert checks["Delivery"]["status"] == "warn"
     assert not [c for c in checks.values() if c["status"] == "fail"]
     controller.shutdown()
+
+
+class ReportBackend:
+    def __init__(self, sent, confirmed, target=""):
+        self.delivered_input = sent
+        self._confirmed = confirmed
+        self._target = target
+
+    def confirmed_input(self):
+        return self._confirmed
+
+    def confirmed_target(self):
+        return self._target
+
+
+def test_the_completion_message_says_what_the_page_actually_received():
+    report = AutomatorController._delivery_report
+
+    # The failure that ran all afternoon looking like success.
+    silent = report("Run complete", ReportBackend(sent=240, confirmed=0))
+    assert "received none of them" in silent
+    assert "recorded position" in silent
+
+    assert report("Run complete", ReportBackend(sent=240, confirmed=240)) == (
+        "Run complete · 240 confirmed"
+    )
+    # Naming the element proves it hit the thing you meant, not just the page.
+    assert report("Run complete", ReportBackend(240, 240, "button#bigCookie")) == (
+        "Run complete · 240 confirmed on button#bigCookie"
+    )
+    assert report("Run complete", ReportBackend(sent=240, confirmed=100)) == (
+        "Run complete · 240 sent, 100 received by the page"
+    )
+    # Unverifiable is reported as sent-only, never as confirmed.
+    assert report("Run complete", ReportBackend(sent=240, confirmed=None)) == (
+        "Run complete · 240 sent"
+    )
+    # Desktop and window runs have no backend to ask.
+    assert report("Run complete", None) == "Run complete"

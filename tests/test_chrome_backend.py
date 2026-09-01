@@ -288,3 +288,60 @@ def test_launch_disables_the_throttling_that_slows_a_hidden_tab(tmp_path):
         "--disable-renderer-backgrounding",
     ):
         assert flag in command
+
+
+class CountingCdp(ViewportCdp):
+    """A page that reports how many of our events its listeners actually saw."""
+
+    def __init__(self, hits=None, fail_verify=False):
+        super().__init__()
+        self.hits = hits
+        self.fail_verify = fail_verify
+
+    def send(self, method, **params):
+        expr = params.get("expression", "")
+        if self.fail_verify and "__keyclickHits=0" in expr:
+            raise ChromeTargetError("page is gone")
+        super().send(method, **params)
+        if method == "Runtime.evaluate" and expr == "window.__keyclickHits":
+            return {"result": {"value": self.hits}}
+        if method == "Runtime.evaluate" and "innerWidth" in expr:
+            return {"result": {"value": dict(self.size)}}
+        return {}
+
+
+def test_delivered_input_counts_one_per_user_level_action():
+    cdp = CountingCdp()
+    backend = ChromeTabBackend(TAB, connection=cdp, sleeper=lambda _s: None)
+
+    backend.click(10, 10)
+    backend.press("a")
+    backend.scroll(3)
+    backend.doubleClick(10, 10)
+
+    assert backend.delivered_input == 1 + 1 + 3 + 2
+
+
+def test_verification_reports_what_the_page_received():
+    cdp = CountingCdp(hits=7)
+    backend = ChromeTabBackend(TAB, connection=cdp, sleeper=lambda _s: None)
+
+    backend.begin_verification()
+    for _ in range(7):
+        backend.click(10, 10)
+
+    assert backend.confirmed_input() == 7
+    assert backend.delivered_input == 7
+
+
+def test_a_page_that_received_nothing_is_distinguishable_from_unknown():
+    silent = ChromeTabBackend(TAB, connection=CountingCdp(hits=0), sleeper=lambda _s: None)
+    silent.begin_verification()
+    silent.click(10, 10)
+    assert silent.confirmed_input() == 0
+
+    # Verification that could not be installed must report unknown, not zero.
+    blind = ChromeTabBackend(TAB, connection=CountingCdp(fail_verify=True), sleeper=lambda _s: None)
+    blind.begin_verification()
+    blind.click(10, 10)
+    assert blind.confirmed_input() is None

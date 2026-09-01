@@ -265,11 +265,78 @@ class ChromeTabBackend:
         self._held_button: str | None = None
         self._viewport: tuple[int, int] | None = None
         self._viewport_at = 0.0
+        self._delivered = 0
+        self._verifying = False
 
     def close(self) -> None:
         if self._held_button:
             self.mouseUp(self._held_button)
         self._cdp.close()
+
+    # -- delivery confirmation --------------------------------------------------
+
+    def begin_verification(self) -> None:
+        """Count input the page genuinely receives, not just what we sent.
+
+        Dispatching an event always "succeeds"; it says nothing about whether the
+        page got it. A capture-phase listener on the document is the cheapest
+        honest answer, and works on any page.
+        """
+        self._delivered = 0
+        try:
+            self._cdp.send(
+                "Runtime.evaluate",
+                expression=(
+                    "window.__keyclickHits=0;window.__keyclickTarget='';"
+                    "if(!window.__keyclickCounter){"
+                    # A document listener alone fires even for a click far outside
+                    # the viewport, which reports success for input that hit
+                    # nothing. Only count events that reached a real element.
+                    "window.__keyclickCounter=function(e){"
+                    "var t=e.target;"
+                    "if(!t||t===document.documentElement||t===document.body)return;"
+                    "window.__keyclickHits++;"
+                    "if(!window.__keyclickTarget)window.__keyclickTarget="
+                    "t.tagName.toLowerCase()+(t.id?'#'+t.id:'');};"
+                    "document.addEventListener('mousedown',window.__keyclickCounter,true);"
+                    "document.addEventListener('keydown',window.__keyclickCounter,true);"
+                    "document.addEventListener('wheel',window.__keyclickCounter,true);}1"
+                ),
+                returnByValue=True,
+            )
+            self._verifying = True
+        except ChromeTargetError:
+            self._verifying = False
+
+    def confirmed_input(self) -> int | None:
+        """How much of what we sent the page actually saw, or None if unknown."""
+        if not self._verifying:
+            return None
+        try:
+            result = self._cdp.send(
+                "Runtime.evaluate", expression="window.__keyclickHits", returnByValue=True
+            )
+        except ChromeTargetError:
+            return None
+        value = result.get("result", {}).get("value")
+        return int(value) if isinstance(value, (int, float)) else None
+
+    def confirmed_target(self) -> str:
+        """The first element the page handed our input to, for the run report."""
+        if not self._verifying:
+            return ""
+        try:
+            result = self._cdp.send(
+                "Runtime.evaluate", expression="window.__keyclickTarget", returnByValue=True
+            )
+        except ChromeTargetError:
+            return ""
+        value = result.get("result", {}).get("value")
+        return str(value) if isinstance(value, str) else ""
+
+    @property
+    def delivered_input(self) -> int:
+        return self._delivered
 
     # -- viewport ---------------------------------------------------------------
 
@@ -400,6 +467,7 @@ class ChromeTabBackend:
     def press(self, key: str) -> None:
         self._key_event("keyDown", key)
         self._key_event("keyUp", key)
+        self._delivered += 1
 
     def hotkey(self, *keys: str) -> None:
         names = [key.strip().lower() for key in keys if key.strip()]
@@ -435,6 +503,7 @@ class ChromeTabBackend:
         self._mouse("mouseMoved")
         self._mouse("mousePressed", name, 1)
         self._mouse("mouseReleased", name, 1)
+        self._delivered += 1
 
     def doubleClick(self, x: int | None = None, y: int | None = None, button: str = "left") -> None:
         name = self._button(button)
@@ -444,6 +513,7 @@ class ChromeTabBackend:
         self._mouse("mouseReleased", name, 1)
         self._mouse("mousePressed", name, 2)
         self._mouse("mouseReleased", name, 2)
+        self._delivered += 2
 
     def moveTo(self, x: int, y: int, _pause: bool = True) -> None:
         self._point(x, y)
@@ -473,6 +543,7 @@ class ChromeTabBackend:
         delta = -120 if amount > 0 else 120
         for _ in range(notches):
             self._mouse("mouseWheel", deltaX=0, deltaY=delta)
+            self._delivered += 1
 
     def mouseDown(self, button: str = "left", _pause: bool = True) -> None:
         name = self._button(button)

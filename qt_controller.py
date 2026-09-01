@@ -1847,11 +1847,36 @@ class AutomatorController(QObject):
             return True
         return self._start_session(session)
 
+    @staticmethod
+    def _delivery_report(message: str, backend: ChromeTabBackend | None) -> str:
+        """Say what actually landed, not just that the loop finished."""
+        if backend is None:
+            return message
+        sent = backend.delivered_input
+        if not sent:
+            return message
+        confirmed = backend.confirmed_input()
+        if confirmed is None:
+            return f"{message} · {sent} sent"
+        if confirmed == 0:
+            return (
+                f"{message} · {sent} sent, but the page received none of them. "
+                "Check the recorded position is still over the right element."
+            )
+        where = ""
+        target = getattr(backend, "confirmed_target", lambda: "")()
+        if target:
+            where = f" on {target}"
+        if confirmed < sent:
+            return f"{message} · {sent} sent, {confirmed} received by the page{where}"
+        return f"{message} · {sent} confirmed{where}"
+
     def _run_worker(self, session: RunSession) -> None:
         browser_backend: ChromeTabBackend | None = None
         try:
             if session.settings.target_mode == "browser":
                 browser_backend = ChromeTabBackend(self._resolve_browser_tab(session.settings))
+                browser_backend.begin_verification()
                 backend = browser_backend
             elif session.settings.target_mode == "window":
                 backend = WindowMessageBackend(session.target_hwnd, self._get_window_service())
@@ -1870,10 +1895,11 @@ class AutomatorController(QObject):
                 session.pause_event,
                 session.reserved_shortcuts or None,
             )
+            base = session.completion_message if complete else "Stopped safely"
             self.finishedFromWorker.emit(
                 session.session_id,
                 complete,
-                session.completion_message if complete else "Stopped safely",
+                self._delivery_report(base, browser_backend),
             )
         except pyautogui.FailSafeException:
             self.finishedFromWorker.emit(

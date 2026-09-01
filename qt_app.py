@@ -34,6 +34,8 @@ def build_engine(
         window_service=window_service,
     )
     engine = QQmlApplicationEngine()
+    # Lets every QML file reach the Theme singleton via `import qml`.
+    engine.addImportPath(str(resource_root()))
     engine.rootContext().setContextProperty("controller", controller)
     qml_path = resource_root() / "qml" / "Main.qml"
     engine.load(QUrl.fromLocalFile(str(qml_path)))

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -39,7 +40,7 @@ def test_sequence_rows_use_numbered_blue_workflow_steps():
     assert 'readonly property color primary: "#1565FF"' in QML
     assert 'objectName: "actionCardSurface"' in QML
     assert 'controller.selectedIndex === actionCard.actionIndex ? "#EDF3FF"' in QML
-    assert 'controller.selectedIndex === actionCard.actionIndex ? root.primary' in QML
+    assert 'controller.selectedIndex === actionCard.actionIndex ? Theme.primary' in QML
     assert 'objectName: "editingBadge"' in QML
     assert 'readonly property color accent: "#B86700"' not in QML
 
@@ -62,17 +63,18 @@ def test_action_type_picker_uses_rounded_themed_popup():
 
 
 def test_animated_hover_surfaces_do_not_interpolate_from_transparent_black():
-    assert "component KButton: Components.AppButton" in QML
+    # KButton is a file component now, still wrapping AppButton.
+    assert "AppButton {" in QML
     assert "AbstractButton" in APP_BUTTON
-    assert "component KButton: Button" not in QML
+    assert "Button {" in QML
     assert '? "#00E5EAF2"' in APP_BUTTON
-    assert 'hover.hovered ? "#F4F7FF" : root.surface' in QML
+    assert 'hover.hovered ? "#F4F7FF" : Theme.surface' in QML
     assert 'option.hovered ? "#F1F4F9" : "#00F1F4F9"' in QML
 
 
 def test_status_toast_uses_theme_surfaces_not_near_black():
     assert 'color: "#F2171A21"' not in QML
-    assert "toast.tone === \"error\" ? root.redSoft" in QML
+    assert "toast.tone === \"error\" ? Theme.redSoft" in QML
     assert "root.height - 18 - runBar.height - height - 10" in QML
 
 
@@ -104,7 +106,7 @@ def test_navigation_hover_stays_neutral_and_record_buttons_do_not_overflow():
 
 
 def test_compact_shortcut_dock_and_run_controls_have_stable_visual_contracts():
-    assert "component ShortcutHint: Rectangle" in QML
+    assert 'objectName: "shortcutHint_" + index' in QML
     assert 'objectName: "shortcutDock"' in QML
     assert 'objectName: "runControlGroup"' in QML
     assert 'objectName: "runStartButton"' in QML
@@ -171,7 +173,7 @@ def test_in_app_profile_library_supports_switching_and_folder_management():
     assert QML.count("Layout.preferredWidth: 112") >= 2
     assert "model: controller.profileEntries" in QML
     assert "modelData.path === controller.currentProfilePath" in QML
-    assert "root.requestProfileOpen(modelData.path)" in QML
+    assert "requestProfileOpen(modelData.path)" in QML
     assert 'sequence: "Ctrl+O"' in QML
     assert 'sequence: "Ctrl+Shift+S"' in QML
     assert 'objectName: "profileLibraryScrollBar"' in QML
@@ -251,3 +253,15 @@ def test_one_picker_offers_every_target_and_chooses_how_to_reach_it():
     assert "targetRow.modelData.advice" in QML
 
 
+
+
+def test_split_qml_files_reference_assets_from_their_own_directory():
+    """Extracted files sit a level deeper, so `../assets` silently resolves nowhere."""
+    root = Path(__file__).parents[1] / "qml"
+    for path in root.rglob("*.qml"):
+        text = path.read_text(encoding="utf-8")
+        for reference in re.findall(r'source: "([^"]+)"', text):
+            if reference.startswith("http") or not reference.endswith((".png", ".ttf")):
+                continue
+            resolved = (path.parent / reference).resolve()
+            assert resolved.is_file(), f"{path.name} points at a missing {reference}"

@@ -2,7 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import qml
+import "components"
 import "components" as Components
+import "pages" as Pages
+import "dialogs" as Dialogs
 
 ApplicationWindow {
     id: root
@@ -264,176 +268,21 @@ ApplicationWindow {
         return ink2
     }
 
-    component SoftShadow: MultiEffect {
-        shadowEnabled: true
-        shadowColor: "#240B1730"
-        shadowBlur: 0.75
-        shadowVerticalOffset: 8
-        shadowHorizontalOffset: 0
-    }
 
-    component KButton: Components.AppButton {
-        buttonFontFamily: interSemiBold.name || root.font.family
-        inkColor: root.ink
-        secondaryInkColor: root.ink2
-        mutedInkColor: root.ink3
-        dangerColor: root.red
-        surfaceColor: root.surface
-        surface2Color: root.surface2
-        surface3Color: root.surface3
-        lineColor: root.line
-        primaryColor: root.primary
-        primaryHoverColor: root.primaryHover
-    }
 
-    component KScrollBar: Components.AppScrollBar {
-        pressedThumbColor: root.ink3
-    }
 
-    component KField: Components.AppField {
-        fieldFontFamily: interMedium.name || root.font.family
-        inkColor: root.ink
-        mutedInkColor: root.ink3
-        primaryColor: root.primary
-        dangerColor: root.red
-        lineColor: root.line
-    }
 
-    component FormLabel: Text {
-        font.family: interSemiBold.name || root.font.family
-        font.pixelSize: 10
-        font.weight: Font.DemiBold
-        font.letterSpacing: 0.8
-        color: root.ink3
-    }
 
-    component WorkspaceTab: Rectangle {
-        id: workspaceTab
-        property string label: ""
-        property string badge: ""
-        property int tabIndex: 0
-        property bool pointerHover: false
-        readonly property bool selected: root.activeTab === tabIndex
-        implicitWidth: workspaceTabContent.implicitWidth + (root.layoutMode === "compact" ? 20 : 28)
-        implicitHeight: 38
-        radius: 11
-        // Fade from a zero-alpha copy of the hover colour, never from "transparent".
-        // "transparent" is zero-alpha BLACK, so animating out of it drags the tab
-        // through a dark smear -- the flash e5481d5 removed from the old nav.
-        color: selected ? root.surface : (pointerHover ? "#E3E8F1" : "#00E3E8F1")
-        border.width: selected ? 1 : 0
-        border.color: root.line
-        Behavior on color { ColorAnimation { duration: 140 } }
-        Accessible.role: Accessible.PageTab
-        Accessible.name: workspaceTab.label
-        Accessible.onPressAction: root.selectTab(workspaceTab.tabIndex)
-        HoverHandler { cursorShape: Qt.PointingHandCursor; onHoveredChanged: workspaceTab.pointerHover = hovered }
-        TapHandler { onTapped: root.selectTab(workspaceTab.tabIndex) }
 
-        Row {
-            id: workspaceTabContent
-            anchors.centerIn: parent
-            spacing: 7
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: workspaceTab.label
-                color: workspaceTab.selected ? root.ink : root.ink2
-                font.family: interSemiBold.name || root.font.family
-                font.pixelSize: 13
-            }
-            Rectangle {
-                visible: workspaceTab.badge !== ""
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(20, workspaceTabBadge.implicitWidth + 12)
-                height: 19
-                radius: 9
-                color: workspaceTab.selected ? root.primarySoft : root.surface3
-                Text {
-                    id: workspaceTabBadge
-                    anchors.centerIn: parent
-                    text: workspaceTab.badge
-                    color: workspaceTab.selected ? root.primary : root.ink2
-                    font.family: interSemiBold.name || root.font.family
-                    font.pixelSize: 10
-                }
-            }
-        }
-    }
 
-    component KeyCap: Rectangle {
-        property string keyText: "F6"
-        implicitWidth: Math.max(42, keyLabel.implicitWidth + 18)
-        implicitHeight: 25
-        radius: 7
-        color: root.surface3
-        border.width: 1
-        border.color: root.line
-        Text {
-            id: keyLabel
-            anchors.centerIn: parent
-            text: parent.keyText.toUpperCase()
-            color: root.ink
-            font.family: interSemiBold.name || root.font.family
-            font.pixelSize: 10
-        }
-    }
 
-    component ShortcutHint: Rectangle {
-        id: shortcutHint
-        property string keyText: "F6"
-        property string labelText: "Start"
-        property bool compact: false
-        property bool pointerHover: false
-        implicitHeight: compact ? 40 : 25
-        radius: compact ? 10 : 0
-        color: compact ? (pointerHover ? root.primarySoft : "#F3F6FC") : "#00F3F6FC"
-        border.width: compact ? 1 : 0
-        border.color: compact ? (pointerHover ? "#B8CDF7" : root.line) : "transparent"
-        HoverHandler { onHoveredChanged: shortcutHint.pointerHover = hovered }
 
-        RowLayout {
-            visible: !shortcutHint.compact
-            anchors.fill: parent
-            spacing: 7
-            KeyCap { keyText: shortcutHint.keyText }
-            Text {
-                Layout.fillWidth: true
-                text: shortcutHint.labelText
-                color: root.ink2
-                font.family: interMedium.name || root.font.family
-                font.pixelSize: 11
-            }
-        }
 
-        Column {
-            visible: shortcutHint.compact
-            width: parent.width - 6
-            anchors.centerIn: parent
-            spacing: 1
-            Text {
-                width: parent.width
-                text: shortcutHint.keyText.toUpperCase()
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignHCenter
-                color: root.ink
-                font.family: interSemiBold.name || root.font.family
-                font.pixelSize: 11
-            }
-            Text {
-                width: parent.width
-                text: shortcutHint.labelText.toUpperCase()
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignHCenter
-                color: root.ink3
-                font.family: interSemiBold.name || root.font.family
-                font.pixelSize: 8
-                font.letterSpacing: 0.45
-            }
-        }
 
-        Behavior on color { ColorAnimation { duration: 120 } }
-        Behavior on border.color { ColorAnimation { duration: 120 } }
-    }
+
+
+
+
 
     // Cool neutral surfaces keep the original blue utility-tool character.
     Rectangle {
@@ -457,14 +306,14 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             height: 72
-            color: root.surface
+            color: Theme.surface
 
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 height: 1
-                color: root.line
+                color: Theme.line
             }
 
             RowLayout {
@@ -489,15 +338,15 @@ ApplicationWindow {
                     spacing: 1
                     Text {
                         text: "KeyClick"
-                        color: root.ink
-                        font.family: interBold.name || root.font.family
+                        color: Theme.ink
+                        font.family: Theme.bold
                         font.pixelSize: 16
                         font.weight: Font.Bold
                     }
                     Text {
                         text: "AUTOMATOR  ·  " + Qt.application.version
-                        color: root.ink3
-                        font.family: interSemiBold.name || root.font.family
+                        color: Theme.ink3
+                        font.family: Theme.semiBold
                         font.pixelSize: 9
                         font.letterSpacing: 0.6
                     }
@@ -509,18 +358,20 @@ ApplicationWindow {
                     Layout.preferredWidth: workspaceTabRow.implicitWidth + 8
                     Layout.preferredHeight: 46
                     radius: 14
-                    color: root.surface2
+                    color: Theme.surface2
 
                     Row {
                         id: workspaceTabRow
                         anchors.centerIn: parent
                         spacing: 4
                         WorkspaceTab {
+                            app: root
                             objectName: "workspaceTab_sequence"
                             tabIndex: 0
                             label: "Sequence"
                         }
                         WorkspaceTab {
+                            app: root
                             objectName: "workspaceTab_profiles"
                             tabIndex: 1
                             label: "Profiles"
@@ -529,6 +380,7 @@ ApplicationWindow {
                                    : ""
                         }
                         WorkspaceTab {
+                            app: root
                             objectName: "workspaceTab_runner"
                             tabIndex: 2
                             label: "Runner"
@@ -612,8 +464,8 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     text: controller.currentProfileName
                                     elide: Text.ElideRight
-                                    color: root.ink
-                                    font.family: interBold.name || root.font.family
+                                    color: Theme.ink
+                                    font.family: Theme.bold
                                     // Kept at 28 so the cap height still lines up with the
                                     // status badge on the right of this row.
                                     font.pixelSize: root.layoutMode === "compact" ? 24 : 28
@@ -623,8 +475,8 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     text: (controller.dirty ? "Unsaved  ·  " : "") + controller.summary
                                     elide: Text.ElideRight
-                                    color: controller.dirty ? root.red : root.ink2
-                                    font.family: interRegular.name || root.font.family
+                                    color: controller.dirty ? Theme.red : Theme.ink2
+                                    font.family: Theme.regular
                                     font.pixelSize: 12
                                 }
                             }
@@ -649,7 +501,7 @@ ApplicationWindow {
                                 width: implicitWidth
                                 height: implicitHeight
                                 radius: 11
-                                color: controller.statusTone === "success" ? "#E8F7F0" : controller.statusTone === "danger" ? "#FFF0F2" : controller.statusTone === "accent" ? root.primarySoft : root.surface2
+                                color: controller.statusTone === "success" ? "#E8F7F0" : controller.statusTone === "danger" ? "#FFF0F2" : controller.statusTone === "accent" ? Theme.primarySoft : Theme.surface2
                                 Behavior on color { ColorAnimation { duration: 180 } }
                                 Row {
                                     id: statusRow
@@ -658,7 +510,7 @@ ApplicationWindow {
                                     Rectangle {
                                         width: 7; height: 7; radius: 4
                                         anchors.verticalCenter: parent.verticalCenter
-                                        color: root.toneColor(controller.statusTone)
+                                        color: Theme.toneColor(controller.statusTone)
                                         SequentialAnimation on opacity {
                                             running: controller.running
                                             loops: Animation.Infinite
@@ -666,7 +518,7 @@ ApplicationWindow {
                                             NumberAnimation { to: 1; duration: 650 }
                                         }
                                     }
-                                    Text { text: controller.status; color: root.toneColor(controller.statusTone); font.family: interSemiBold.name || root.font.family; font.pixelSize: 11 }
+                                    Text { text: controller.status; color: Theme.toneColor(controller.statusTone); font.family: Theme.semiBold; font.pixelSize: 11 }
                                 }
                             }
                         }
@@ -677,7 +529,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
                             radius: 13
-                            color: root.surface
+                            color: Theme.surface
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.leftMargin: 14
@@ -687,8 +539,8 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     text: controller.summary
                                     elide: Text.ElideRight
-                                    color: root.ink2
-                                    font.family: interSemiBold.name || root.font.family
+                                    color: Theme.ink2
+                                    font.family: Theme.semiBold
                                     font.pixelSize: 11
                                 }
                                 KButton {
@@ -734,7 +586,7 @@ ApplicationWindow {
                             Layout.fillHeight: true
                             Layout.minimumHeight: 250
                             radius: 20
-                            color: root.surface
+                            color: Theme.surface
                             border.width: 1
                             border.color: "#E6EAF0"
 
@@ -751,15 +603,15 @@ ApplicationWindow {
                                         GradientStop { position: 0; color: "#EAF1FF" }
                                         GradientStop { position: 1; color: "#F0EAFE" }
                                     }
-                                    Text { anchors.centerIn: parent; text: "+"; color: root.primary; font.family: interSemiBold.name || root.font.family; font.pixelSize: 28 }
+                                    Text { anchors.centerIn: parent; text: "+"; color: Theme.primary; font.family: Theme.semiBold; font.pixelSize: 28 }
                                     SequentialAnimation on scale {
                                         loops: Animation.Infinite
                                         NumberAnimation { to: 1.045; duration: 1600; easing.type: Easing.InOutSine }
                                         NumberAnimation { to: 1; duration: 1600; easing.type: Easing.InOutSine }
                                     }
                                 }
-                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Build a sequence that feels effortless"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 19; font.weight: Font.Bold }
-                                Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "Add keys, clicks, scrolling, text, or drag actions. Then tune timing in the inspector."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 12; lineHeight: 1.25 }
+                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Build a sequence that feels effortless"; color: Theme.ink; font.family: Theme.bold; font.pixelSize: 19; font.weight: Font.Bold }
+                                Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "Add keys, clicks, scrolling, text, or drag actions. Then tune timing in the inspector."; color: Theme.ink2; font.family: Theme.regular; font.pixelSize: 12; lineHeight: 1.25 }
                                 KButton {
                                     objectName: "createFirstAction"
                                     anchors.horizontalCenter: parent.horizontalCenter
@@ -813,14 +665,14 @@ ApplicationWindow {
                                         width: actionCard.width - x
                                         height: 3
                                         radius: 2
-                                        color: root.primary
+                                        color: Theme.primary
                                         Rectangle {
                                             width: 9
                                             height: 9
                                             radius: 5
                                             anchors.left: parent.left
                                             anchors.verticalCenter: parent.verticalCenter
-                                            color: root.primary
+                                            color: Theme.primary
                                         }
                                     }
 
@@ -833,7 +685,7 @@ ApplicationWindow {
                                         y: stepBadge.y + stepBadge.height + 2
                                         height: actionCard.height - stepBadge.height + actionList.spacing - 2
                                         radius: 1
-                                        color: root.line
+                                        color: Theme.line
                                     }
 
                                     Rectangle {
@@ -845,17 +697,17 @@ ApplicationWindow {
                                         anchors.left: parent.left
                                         anchors.verticalCenter: parent.verticalCenter
                                         opacity: actionCard.actionEnabled ? 1 : 0.55
-                                        color: controller.runningActionIndex === actionCard.actionIndex ? root.green : controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? root.primarySoft : root.surface2
+                                        color: controller.runningActionIndex === actionCard.actionIndex ? Theme.green : controller.selectedIndex === actionCard.actionIndex ? Theme.primary : hover.hovered ? Theme.primarySoft : Theme.surface2
                                         border.width: controller.runningActionIndex === actionCard.actionIndex || controller.selectedIndex === actionCard.actionIndex ? 0 : 1
-                                        border.color: hover.hovered ? "#B8CCF5" : root.line
+                                        border.color: hover.hovered ? "#B8CCF5" : Theme.line
                                         Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                                         Behavior on color { ColorAnimation { duration: 120 } }
                                         Behavior on border.color { ColorAnimation { duration: 120 } }
                                         Text {
                                             anchors.centerIn: parent
                                             text: String(actionCard.actionIndex + 1).padStart(2, "0")
-                                            color: controller.runningActionIndex === actionCard.actionIndex || controller.selectedIndex === actionCard.actionIndex ? "white" : root.primary
-                                            font.family: interSemiBold.name || root.font.family
+                                            color: controller.runningActionIndex === actionCard.actionIndex || controller.selectedIndex === actionCard.actionIndex ? "white" : Theme.primary
+                                            font.family: Theme.semiBold
                                             font.pixelSize: 10
                                             font.letterSpacing: 0.35
                                         }
@@ -884,9 +736,9 @@ ApplicationWindow {
                                         anchors.verticalCenter: parent.verticalCenter
                                         height: 66
                                         radius: 14
-                                        color: tap.pressed ? "#DEE9FF" : controller.runningActionIndex === actionCard.actionIndex ? root.successSoft : controller.selectedIndex === actionCard.actionIndex ? "#EDF3FF" : hover.hovered ? "#F4F7FF" : root.surface
+                                        color: tap.pressed ? "#DEE9FF" : controller.runningActionIndex === actionCard.actionIndex ? Theme.successSoft : controller.selectedIndex === actionCard.actionIndex ? "#EDF3FF" : hover.hovered ? "#F4F7FF" : Theme.surface
                                         border.width: controller.selectedIndex === actionCard.actionIndex ? 2 : 1
-                                        border.color: reorderDrag.active ? root.primary : controller.runningActionIndex === actionCard.actionIndex ? root.green : controller.selectedIndex === actionCard.actionIndex ? root.primary : hover.hovered ? "#B8CCF5" : root.line
+                                        border.color: reorderDrag.active ? Theme.primary : controller.runningActionIndex === actionCard.actionIndex ? Theme.green : controller.selectedIndex === actionCard.actionIndex ? Theme.primary : hover.hovered ? "#B8CCF5" : Theme.line
                                         scale: reorderDrag.active ? 1.015 : tap.pressed ? 0.995 : 1
                                         transformOrigin: Item.Center
                                         transform: Translate { y: reorderDrag.active ? reorderDrag.translation.y : 0 }
@@ -912,14 +764,14 @@ ApplicationWindow {
                                                     Layout.preferredWidth: 36
                                                     Layout.preferredHeight: 36
                                                     radius: 11
-                                                    color: controller.selectedIndex === actionCard.actionIndex ? root.surface : root.primarySoft
+                                                    color: controller.selectedIndex === actionCard.actionIndex ? Theme.surface : Theme.primarySoft
                                                     border.width: controller.selectedIndex === actionCard.actionIndex ? 1 : 0
                                                     border.color: "#C6D8FC"
                                                     Text {
                                                         anchors.centerIn: parent
                                                         text: actionCard.actionIcon
-                                                        color: root.primary
-                                                        font.family: interBold.name || root.font.family
+                                                        color: Theme.primary
+                                                        font.family: Theme.bold
                                                         font.pixelSize: actionCard.actionIcon.length > 1 ? 10 : 14
                                                     }
                                                 }
@@ -933,8 +785,8 @@ ApplicationWindow {
                                                             Layout.fillWidth: true
                                                             text: actionCard.title
                                                             elide: Text.ElideRight
-                                                            color: root.ink
-                                                            font.family: interSemiBold.name || root.font.family
+                                                            color: Theme.ink
+                                                            font.family: Theme.semiBold
                                                             font.pixelSize: 13
                                                         }
                                                         Rectangle {
@@ -943,13 +795,13 @@ ApplicationWindow {
                                                             implicitWidth: editingLabel.implicitWidth + 14
                                                             implicitHeight: 20
                                                             radius: 7
-                                                            color: controller.runningActionIndex === actionCard.actionIndex ? root.green : root.primary
+                                                            color: controller.runningActionIndex === actionCard.actionIndex ? Theme.green : Theme.primary
                                                             Text {
                                                                 id: editingLabel
                                                                 anchors.centerIn: parent
                                                                 text: controller.runningActionIndex === actionCard.actionIndex ? "RUNNING" : "EDITING"
                                                                 color: "white"
-                                                                font.family: interSemiBold.name || root.font.family
+                                                                font.family: Theme.semiBold
                                                                 font.pixelSize: 8
                                                                 font.letterSpacing: 0.5
                                                             }
@@ -959,8 +811,8 @@ ApplicationWindow {
                                                         Layout.fillWidth: true
                                                         text: actionCard.subtitle
                                                         elide: Text.ElideRight
-                                                        color: root.ink3
-                                                        font.family: interRegular.name || root.font.family
+                                                        color: Theme.ink3
+                                                        font.family: Theme.regular
                                                         font.pixelSize: 11
                                                     }
                                                 }
@@ -973,7 +825,7 @@ ApplicationWindow {
                                                 Layout.preferredHeight: 36
                                                 radius: 10
                                                 opacity: actionList.count > 1 && !controller.running ? 1 : 0.35
-                                                color: reorderDrag.active ? root.primarySoft : dragHover.hovered ? root.surface3 : "transparent"
+                                                color: reorderDrag.active ? Theme.primarySoft : dragHover.hovered ? Theme.surface3 : "transparent"
                                                 border.width: reorderDrag.active ? 1 : 0
                                                 border.color: "#B8CCF5"
                                                 HoverHandler {
@@ -991,7 +843,7 @@ ApplicationWindow {
                                                             width: 3
                                                             height: 3
                                                             radius: 2
-                                                            color: reorderDrag.active ? root.primary : root.ink3
+                                                            color: reorderDrag.active ? Theme.primary : Theme.ink3
                                                         }
                                                     }
                                                 }
@@ -1033,7 +885,7 @@ ApplicationWindow {
                                                     radius: 11
                                                     anchors.centerIn: parent
                                                     clip: true
-                                                    color: enabledSwitch.checked ? root.primary : "#CAD1DC"
+                                                    color: enabledSwitch.checked ? Theme.primary : "#CAD1DC"
                                                     scale: enabledSwitch.down ? 0.96 : 1
                                                     transformOrigin: Item.Center
                                                     Behavior on color {
@@ -1071,834 +923,12 @@ ApplicationWindow {
                     }
                 }
 
-                Item {
-                    objectName: "profileLibraryPage"
-
-                    ColumnLayout {
-                        // Same gutters as the Sequence page so the three tabs
-                        // share one left edge.
-                        anchors.fill: parent
-                        anchors.leftMargin: root.layoutMode === "wide" ? 28 : 22
-                        anchors.rightMargin: root.layoutMode === "wide" ? 28 : 22
-                        spacing: 0
-                        clip: true
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 92
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                spacing: 8
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 3
-                                    Text {
-                                        text: "Profiles"
-                                        color: root.ink
-                                        font.family: interBold.name || root.font.family
-                                        font.pixelSize: 23
-                                        font.weight: Font.Bold
-                                    }
-                                    Text {
-                                        text: controller.profileEntries.length === 1
-                                              ? "1 saved sequence"
-                                              : controller.profileEntries.length + " saved sequences"
-                                        color: root.ink2
-                                        font.family: interRegular.name || root.font.family
-                                        font.pixelSize: 12
-                                    }
-                                }
-                                Item { Layout.fillWidth: true }
-                                KButton {
-                                    objectName: "refreshProfileLibraryButton"
-                                    leading: "↻"
-                                    text: "Refresh"
-                                    implicitWidth: 92
-                                    Accessible.name: "Refresh profiles"
-                                    onClicked: controller.refreshProfiles()
-                                }
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 88
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                anchors.topMargin: 12
-                                anchors.bottomMargin: 12
-                                spacing: 5
-                                FormLabel { text: "PROFILE FOLDER" }
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Text {
-                                        objectName: "profileDirectoryLabel"
-                                        Layout.fillWidth: true
-                                        text: controller.profileDirectory
-                                        elide: Text.ElideMiddle
-                                        color: root.ink2
-                                        font.family: interMedium.name || root.font.family
-                                        font.pixelSize: 11
-                                        HoverHandler { id: directoryHover }
-                                    }
-                                    KButton {
-                                        objectName: "chooseProfileFolderButton"
-                                        text: "Browse"
-                                        implicitWidth: 84
-                                        implicitHeight: 38
-                                        onClicked: controller.chooseProfileFolder()
-                                    }
-                                }
-                            }
-                        }
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 180
-
-                            ListView {
-                                id: profileList
-                                objectName: "profileLibraryList"
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                anchors.topMargin: 4
-                                anchors.bottomMargin: 8
-                                spacing: 8
-                                clip: true
-                                boundsBehavior: Flickable.StopAtBounds
-                                model: controller.profileEntries
-                                ScrollBar.vertical: KScrollBar {
-                                    id: profileScrollBar
-                                    objectName: "profileLibraryScrollBar"
-                                }
-                                delegate: Item {
-                                    id: profileDelegate
-                                    required property var modelData
-                                    required property int index
-                                    readonly property string profilePath: modelData.path
-                                    readonly property bool currentProfile: modelData.path === controller.currentProfilePath
-                                    readonly property bool queued: controller.runQueuePaths.indexOf(profilePath) >= 0
-                                    width: ListView.view.width
-                                           - (profileScrollBar.visible ? profileScrollBar.width + 8 : 0)
-                                    height: 80
-
-                                    AbstractButton {
-                                        id: profileRow
-                                        readonly property var modelData: profileDelegate.modelData
-                                        readonly property int index: profileDelegate.index
-                                        readonly property string profilePath: profileDelegate.profilePath
-                                        readonly property bool currentProfile: profileDelegate.currentProfile
-                                        readonly property bool queued: profileDelegate.queued
-                                        property bool pointerHover: false
-                                        objectName: "profileLibraryRow_" + index
-                                        anchors.left: parent.left
-                                        anchors.right: queueProfileButton.left
-                                        anchors.rightMargin: 8
-                                        anchors.top: parent.top
-                                        anchors.bottom: parent.bottom
-                                        enabled: modelData.valid && !controller.running
-                                        hoverEnabled: true
-                                        Accessible.name: (currentProfile ? "Current profile, " : "Open profile, ") + modelData.name
-                                        Accessible.description: modelData.valid
-                                              ? modelData.actionCount + " actions. Modified " + modelData.modified
-                                              : "Unavailable profile"
-                                        HoverHandler { onHoveredChanged: profileRow.pointerHover = hovered }
-                                        onClicked: {
-                                            if (profileRow.currentProfile)
-                                                root.selectTab(0)
-                                            else
-                                                root.requestProfileOpen(modelData.path)
-                                        }
-                                        background: Rectangle {
-                                        radius: 14
-                                        color: profileRow.currentProfile ? root.primarySoft
-                                             : profileRow.down ? "#E8EEF8"
-                                             : profileRow.pointerHover ? "#F4F7FF"
-                                             : root.surface
-                                        border.width: profileRow.currentProfile ? 2 : 1
-                                        border.color: profileRow.currentProfile ? root.primary
-                                                    : profileRow.pointerHover ? "#B8CCF5"
-                                                    : root.line
-                                        scale: profileRow.down ? 0.992 : 1
-                                        Behavior on color { ColorAnimation { duration: 120 } }
-                                        Behavior on border.color { ColorAnimation { duration: 120 } }
-                                        Behavior on scale { NumberAnimation { duration: 90 } }
-                                    }
-                                        // Padding belongs to the control: anchoring the
-                                        // contentItem fights the Control's own sizing and
-                                        // let the trailing chevron escape the card.
-                                        leftPadding: 12
-                                        rightPadding: 12
-                                        contentItem: RowLayout {
-                                        spacing: 11
-                                        Rectangle {
-                                            Layout.preferredWidth: 38
-                                            Layout.preferredHeight: 38
-                                            radius: 11
-                                            color: profileRow.currentProfile ? root.primary : root.surface2
-                                            border.width: profileRow.currentProfile ? 0 : 1
-                                            border.color: root.line
-                                            Image {
-                                                anchors.centerIn: parent
-                                                width: 24
-                                                height: 24
-                                                source: "../assets/app-logo-transparent.png"
-                                                fillMode: Image.PreserveAspectFit
-                                                smooth: true
-                                                mipmap: true
-                                            }
-                                        }
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 4
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 6
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: profileRow.modelData.name
-                                                    elide: Text.ElideRight
-                                                    color: profileRow.modelData.valid ? root.ink : root.red
-                                                    font.family: interSemiBold.name || root.font.family
-                                                    font.pixelSize: 13
-                                                }
-                                                Rectangle {
-                                                    visible: profileRow.currentProfile
-                                                    implicitWidth: currentProfileLabel.implicitWidth + 14
-                                                    implicitHeight: 20
-                                                    radius: 7
-                                                    color: root.primary
-                                                    Text {
-                                                        id: currentProfileLabel
-                                                        anchors.centerIn: parent
-                                                        text: "CURRENT"
-                                                        color: "white"
-                                                        font.family: interSemiBold.name || root.font.family
-                                                        font.pixelSize: 8
-                                                        font.letterSpacing: 0.45
-                                                    }
-                                                }
-                                            }
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: profileRow.modelData.valid
-                                                      ? (profileRow.modelData.actionCount === 1
-                                                         ? "1 action"
-                                                         : profileRow.modelData.actionCount + " actions")
-                                                        + "  ·  " + profileRow.modelData.modified
-                                                      : "Could not read this profile"
-                                                elide: Text.ElideRight
-                                                color: profileRow.modelData.valid ? root.ink3 : root.red
-                                                font.family: interRegular.name || root.font.family
-                                                font.pixelSize: 11
-                                            }
-                                        }
-                                        Text {
-                                            visible: profileRow.modelData.valid && !profileRow.currentProfile
-                                            text: "›"
-                                            color: root.ink3
-                                            font.family: interSemiBold.name || root.font.family
-                                            font.pixelSize: 20
-                                        }
-                                    }
-                                }
-                                    KButton {
-                                        id: profileHistoryButton
-                                        objectName: "profileHistoryButton_" + profileDelegate.index
-                                        anchors.right: deleteProfileButton.left
-                                        anchors.rightMargin: 6
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        implicitWidth: 42
-                                        implicitHeight: 38
-                                        leading: "↺"
-                                        quiet: true
-                                        enabled: !controller.running && !controller.runQueueRunning
-                                        Accessible.name: "Earlier versions of " + profileDelegate.modelData.name
-                                        onClicked: root.openProfileHistory(
-                                            profileDelegate.profilePath,
-                                            profileDelegate.modelData.name
-                                        )
-                                    }
-                                    KButton {
-                                        id: deleteProfileButton
-                                        objectName: "deleteProfileButton_" + profileDelegate.index
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        implicitWidth: 42
-                                        implicitHeight: 38
-                                        leading: "×"
-                                        danger: true
-                                        quiet: true
-                                        enabled: !controller.running && !controller.runQueueRunning
-                                        Accessible.name: "Delete " + profileDelegate.modelData.name
-                                        onClicked: root.requestProfileDelete(
-                                            profileDelegate.profilePath,
-                                            profileDelegate.modelData.name
-                                        )
-                                    }
-                                    KButton {
-                                        id: queueProfileButton
-                                        objectName: "queueProfileButton_" + profileDelegate.index
-                                        anchors.right: profileHistoryButton.left
-                                        anchors.rightMargin: 6
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        implicitWidth: 76
-                                        implicitHeight: 38
-                                        text: profileDelegate.queued ? "Queued" : "Queue"
-                                        leading: profileDelegate.queued ? "✓" : "+"
-                                        activeNeutral: profileDelegate.queued
-                                        enabled: profileDelegate.modelData.valid
-                                              && !controller.running
-                                              && !profileDelegate.queued
-                                              && !(profileDelegate.currentProfile && (controller.dirty || controller.runSettingsPending))
-                                        Accessible.name: (profileDelegate.queued ? "Already queued " : "Queue ") + profileDelegate.modelData.name
-                                        onClicked: controller.enqueueProfile(profileDelegate.profilePath)
-                                    }
-                                }
-                            }
-
-                            Column {
-                                objectName: "profileLibraryEmptyState"
-                                visible: profileList.count === 0
-                                anchors.centerIn: parent
-                                width: Math.min(300, parent.width - 40)
-                                spacing: 10
-                                Rectangle {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    width: 54
-                                    height: 54
-                                    radius: 17
-                                    color: root.primarySoft
-                                    Image {
-                                        anchors.centerIn: parent
-                                        width: 32
-                                        height: 32
-                                        source: "../assets/app-logo-transparent.png"
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
-                                        mipmap: true
-                                    }
-                                }
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: "No saved profiles here"
-                                    color: root.ink
-                                    font.family: interBold.name || root.font.family
-                                    font.pixelSize: 17
-                                    font.weight: Font.Bold
-                                }
-                                Text {
-                                    width: parent.width
-                                    horizontalAlignment: Text.AlignHCenter
-                                    wrapMode: Text.WordWrap
-                                    text: "Save this sequence or choose the folder that already contains your KeyClick profiles."
-                                    color: root.ink2
-                                    font.family: interRegular.name || root.font.family
-                                    font.pixelSize: 12
-                                    lineHeight: 1.3
-                                }
-                                KButton {
-                                    objectName: "profileLibraryEmptySaveButton"
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: "Save this profile"
-                                    primary: true
-                                    implicitWidth: 156
-                                    onClicked: root.saveProfileAsWithVisibleSettings()
-                                }
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 76
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                spacing: 8
-                                Item { Layout.fillWidth: true }
-                                KButton {
-                                    objectName: "profileLibraryRunnerButton"
-                                    Layout.preferredWidth: 112
-                                    text: controller.runQueueCount > 0
-                                          ? "Runner · " + controller.runQueueCount
-                                          : "Runner"
-                                    activeNeutral: controller.runQueueCount > 0
-                                    onClicked: root.selectTab(2)
-                                }
-                                KButton {
-                                    objectName: "profileLibrarySaveAsButton"
-                                    Layout.preferredWidth: 112
-                                    text: "Save as…"
-                                    primary: true
-                                    enabled: !controller.running
-                                    onClicked: root.saveProfileAsWithVisibleSettings()
-                                }
-                                KButton {
-                                    objectName: "profileLibraryOpenFileButton"
-                                    Layout.preferredWidth: 112
-                                    text: "Open file…"
-                                    enabled: !controller.running
-                                    onClicked: root.requestDestructiveAction("open")
-                                }
-                            }
-                        }
-                    }
+                Pages.ProfilesPage {
+                    app: root
                 }
 
-                Item {
-                    objectName: "runQueuePage"
-
-                    ColumnLayout {
-                        // Same gutters as the Sequence page so the three tabs
-                        // share one left edge.
-                        anchors.fill: parent
-                        anchors.leftMargin: root.layoutMode === "wide" ? 28 : 22
-                        anchors.rightMargin: root.layoutMode === "wide" ? 28 : 22
-                        spacing: 0
-                        clip: true
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 92
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                spacing: 8
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 3
-                                    Text {
-                                        text: "Multi-Profile Runner"
-                                        color: root.ink
-                                        font.family: interBold.name || root.font.family
-                                        font.pixelSize: 23
-                                        font.weight: Font.Bold
-                                    }
-                                    Text {
-                                        text: controller.runQueueCount === 0
-                                              ? "No profiles queued"
-                                              : controller.runQueueCount === 1
-                                                ? "1 profile · " + (controller.runQueueMode === "parallel" ? "Parallel" : "Sequential")
-                                                : controller.runQueueCount + " profiles · " + (controller.runQueueMode === "parallel" ? "Parallel" : "Sequential")
-                                        color: root.ink2
-                                        font.family: interRegular.name || root.font.family
-                                        font.pixelSize: 12
-                                    }
-                                }
-                                Item { Layout.fillWidth: true }
-                                KButton {
-                                    objectName: "runQueueAddProfilesButton"
-                                    text: "Profiles"
-                                    leading: "+"
-                                    implicitWidth: 96
-                                    enabled: !controller.running
-                                    onClicked: root.selectTab(1)
-                                }
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-                        Rectangle {
-                            objectName: "runQueueModeNotice"
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 106
-                            Layout.leftMargin: 0
-                            Layout.rightMargin: 0
-                            Layout.topMargin: 12
-                            Layout.bottomMargin: 8
-                            radius: 13
-                            color: root.primarySoft
-                            border.width: 1
-                            border.color: "#C6D8FC"
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 13
-                                anchors.rightMargin: 13
-                                anchors.topMargin: 10
-                                anchors.bottomMargin: 10
-                                spacing: 6
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-                                    FormLabel { text: "RUN MODE"; color: root.primary }
-                                    Item { Layout.fillWidth: true }
-                                    KButton {
-                                        objectName: "runQueueSequentialModeButton"
-                                        implicitWidth: 116
-                                        implicitHeight: 32
-                                        text: "Sequential"
-                                        leading: controller.runQueueMode === "sequential" ? "✓" : ""
-                                        activeNeutral: controller.runQueueMode === "sequential"
-                                        enabled: !controller.running
-                                        Accessible.name: "Run profiles sequentially"
-                                        Accessible.description: "Run one saved profile after another"
-                                        onClicked: controller.setRunQueueMode("sequential")
-                                    }
-                                    KButton {
-                                        objectName: "runQueueParallelModeButton"
-                                        implicitWidth: 100
-                                        implicitHeight: 32
-                                        text: "Parallel"
-                                        leading: controller.runQueueMode === "parallel" ? "✓" : ""
-                                        activeNeutral: controller.runQueueMode === "parallel"
-                                        enabled: !controller.running
-                                        Accessible.name: "Run profiles in parallel"
-                                        Accessible.description: "Run two to eight different background windows together"
-                                        onClicked: controller.setRunQueueMode("parallel")
-                                    }
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: controller.runQueueMode === "parallel"
-                                          ? "Run 2–8 different background windows together. Desktop and duplicate targets are blocked; F9 stops all."
-                                          : "Run one profile at a time. Stop can skip the active profile; F9 stops it and cancels everything waiting."
-                                    color: root.ink2
-                                    font.family: interRegular.name || root.font.family
-                                    font.pixelSize: 11
-                                    lineHeight: 1.25
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 180
-
-                            ListView {
-                                id: runQueueList
-                                objectName: "runQueueList"
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                anchors.topMargin: 6
-                                anchors.bottomMargin: 8
-                                spacing: 8
-                                clip: true
-                                boundsBehavior: Flickable.StopAtBounds
-                                model: controller.runQueueEntries
-                                ScrollBar.vertical: KScrollBar {
-                                    id: runQueueScrollBar
-                                    objectName: "runQueueScrollBar"
-                                }
-                                delegate: Rectangle {
-                                    id: queueCard
-                                    required property var modelData
-                                    required property int index
-                                    objectName: "runQueueCard_" + index
-                                    width: ListView.view.width
-                                           - (runQueueScrollBar.visible ? runQueueScrollBar.width + 8 : 0)
-                                    height: modelData.error.length > 0 ? 124 : 100
-                                    radius: 14
-                                    color: modelData.state === "running" || modelData.state === "armed" || modelData.state === "paused"
-                                           ? root.primarySoft
-                                           : modelData.state === "error"
-                                             ? root.redSoft
-                                             : modelData.state === "complete"
-                                               ? root.successSoft
-                                               : root.surface
-                                    border.width: modelData.state === "running" || modelData.state === "armed" || modelData.state === "paused" ? 2 : 1
-                                    border.color: modelData.state === "error"
-                                                  ? "#EDB8C2"
-                                                  : modelData.state === "complete"
-                                                    ? "#B8DECF"
-                                                    : modelData.state === "running" || modelData.state === "armed" || modelData.state === "paused"
-                                                      ? root.primary
-                                                      : root.line
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 12
-                                        spacing: 10
-
-                                        Rectangle {
-                                            Layout.preferredWidth: 36
-                                            Layout.preferredHeight: 36
-                                            radius: 11
-                                            color: queueCard.modelData.state === "complete"
-                                                   ? root.green
-                                                   : queueCard.modelData.state === "error"
-                                                     ? root.red
-                                                     : root.surface2
-                                            border.width: queueCard.modelData.state === "queued" || queueCard.modelData.state === "cancelled" ? 1 : 0
-                                            border.color: root.line
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: String(queueCard.modelData.position).padStart(2, "0")
-                                                color: queueCard.modelData.state === "complete" || queueCard.modelData.state === "error"
-                                                       ? "white"
-                                                       : root.primary
-                                                font.family: interSemiBold.name || root.font.family
-                                                font.pixelSize: 10
-                                                font.letterSpacing: 0.35
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 4
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 8
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: queueCard.modelData.profileName
-                                                    elide: Text.ElideRight
-                                                    color: root.ink
-                                                    font.family: interSemiBold.name || root.font.family
-                                                    font.pixelSize: 13
-                                                }
-                                                Rectangle {
-                                                    implicitWidth: queueStatusLabel.implicitWidth + 14
-                                                    implicitHeight: 21
-                                                    radius: 7
-                                                    color: queueCard.modelData.tone === "danger"
-                                                           ? root.redSoft
-                                                           : queueCard.modelData.tone === "success"
-                                                             ? root.successSoft
-                                                             : queueCard.modelData.tone === "accent"
-                                                               ? "#DCE8FF"
-                                                               : root.surface2
-                                                    Text {
-                                                        id: queueStatusLabel
-                                                        anchors.centerIn: parent
-                                                        text: queueCard.modelData.status.toUpperCase()
-                                                        color: root.toneColor(queueCard.modelData.tone)
-                                                        font.family: interSemiBold.name || root.font.family
-                                                        font.pixelSize: 8
-                                                        font.letterSpacing: 0.4
-                                                    }
-                                                }
-                                            }
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: queueCard.modelData.target + "  ·  "
-                                                      + queueCard.modelData.actionCount
-                                                      + (queueCard.modelData.actionCount === 1 ? " active action" : " active actions")
-                                                elide: Text.ElideRight
-                                                color: root.ink3
-                                                font.family: interRegular.name || root.font.family
-                                                font.pixelSize: 11
-                                            }
-                                            Text {
-                                                visible: queueCard.modelData.error.length > 0
-                                                Layout.fillWidth: true
-                                                text: queueCard.modelData.error
-                                                wrapMode: Text.WordWrap
-                                                maximumLineCount: 2
-                                                elide: Text.ElideRight
-                                                color: root.red
-                                                font.family: interMedium.name || root.font.family
-                                                font.pixelSize: 10
-                                                HoverHandler { id: queueErrorHover }
-                                            }
-                                            Rectangle {
-                                                visible: queueCard.modelData.state === "running"
-                                                      || queueCard.modelData.state === "armed"
-                                                      || queueCard.modelData.state === "paused"
-                                                Layout.fillWidth: true
-                                                Layout.maximumWidth: 210
-                                                Layout.preferredHeight: 5
-                                                radius: 3
-                                                color: root.surface3
-                                                Rectangle {
-                                                    height: parent.height
-                                                    radius: 3
-                                                    color: root.primary
-                                                    width: queueCard.modelData.progress < 0
-                                                           ? Math.max(28, parent.width * 0.3)
-                                                           : parent.width * Math.max(0, Math.min(1, queueCard.modelData.progress))
-                                                    SequentialAnimation on opacity {
-                                                        running: queueCard.modelData.progress < 0
-                                                              && queueCard.modelData.state !== "paused"
-                                                        loops: Animation.Infinite
-                                                        NumberAnimation { to: 0.4; duration: 520 }
-                                                        NumberAnimation { to: 1; duration: 520 }
-                                                    }
-                                                    Behavior on width { NumberAnimation { duration: 180 } }
-                                                }
-                                            }
-                                        }
-
-                                        RowLayout {
-                                            visible: !controller.runQueueRunning
-                                            Layout.preferredWidth: 152
-                                            spacing: 4
-                                            KButton {
-                                                objectName: "runQueueMoveUp_" + queueCard.index
-                                                Layout.preferredWidth: 34
-                                                Layout.minimumWidth: 34
-                                                implicitWidth: 34
-                                                implicitHeight: 34
-                                                padding: 0
-                                                leading: "↑"
-                                                quiet: true
-                                                enabled: queueCard.index > 0 && !controller.running
-                                                Accessible.name: "Move " + queueCard.modelData.profileName + " up"
-                                                onClicked: controller.moveQueuedProfile(queueCard.index, -1)
-                                            }
-                                            KButton {
-                                                objectName: "runQueueMoveDown_" + queueCard.index
-                                                Layout.preferredWidth: 34
-                                                Layout.minimumWidth: 34
-                                                implicitWidth: 34
-                                                implicitHeight: 34
-                                                padding: 0
-                                                leading: "↓"
-                                                quiet: true
-                                                enabled: queueCard.index < controller.runQueueCount - 1 && !controller.running
-                                                Accessible.name: "Move " + queueCard.modelData.profileName + " down"
-                                                onClicked: controller.moveQueuedProfile(queueCard.index, 1)
-                                            }
-                                            KButton {
-                                                objectName: "runQueueRemove_" + queueCard.index
-                                                Layout.preferredWidth: 76
-                                                Layout.minimumWidth: 76
-                                                implicitWidth: 76
-                                                implicitHeight: 34
-                                                text: "Remove"
-                                                danger: true
-                                                quiet: true
-                                                enabled: !controller.running
-                                                Accessible.name: "Remove " + queueCard.modelData.profileName + " from queue"
-                                                onClicked: controller.removeQueuedProfile(queueCard.index)
-                                            }
-                                        }
-
-                                        RowLayout {
-                                            visible: controller.runQueueRunning
-                                                  && (queueCard.modelData.state === "armed"
-                                                      || queueCard.modelData.state === "running"
-                                                      || queueCard.modelData.state === "paused"
-                                                      || queueCard.modelData.state === "stopping")
-                                            Layout.preferredWidth: 152
-                                            spacing: 4
-                                            KButton {
-                                                objectName: "runQueuePause_" + queueCard.index
-                                                Layout.preferredWidth: 84
-                                                Layout.minimumWidth: 84
-                                                implicitWidth: 84
-                                                implicitHeight: 34
-                                                text: queueCard.modelData.paused ? "Resume" : "Pause"
-                                                enabled: queueCard.modelData.state !== "stopping"
-                                                activeNeutral: queueCard.modelData.paused
-                                                Accessible.name: (queueCard.modelData.paused ? "Resume " : "Pause ") + queueCard.modelData.profileName
-                                                onClicked: controller.toggleRunSessionPaused(queueCard.modelData.id)
-                                            }
-                                            KButton {
-                                                objectName: "runQueueStop_" + queueCard.index
-                                                Layout.preferredWidth: 64
-                                                Layout.minimumWidth: 64
-                                                implicitWidth: 64
-                                                implicitHeight: 34
-                                                text: "Stop"
-                                                danger: true
-                                                enabled: queueCard.modelData.state !== "stopping"
-                                                Accessible.name: "Stop " + queueCard.modelData.profileName
-                                                Accessible.description: controller.runQueueMode === "parallel"
-                                                      ? "Stop only this profile"
-                                                      : "Stop this profile and continue with the next queued profile"
-                                                onClicked: controller.stopRunSession(queueCard.modelData.id)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Column {
-                                objectName: "runQueueEmptyState"
-                                visible: runQueueList.count === 0
-                                anchors.centerIn: parent
-                                width: Math.min(330, parent.width - 48)
-                                spacing: 10
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: "Build your first run queue"
-                                    color: root.ink
-                                    font.family: interBold.name || root.font.family
-                                    font.pixelSize: 18
-                                    font.weight: Font.Bold
-                                }
-                                Text {
-                                    width: parent.width
-                                    horizontalAlignment: Text.AlignHCenter
-                                    wrapMode: Text.WordWrap
-                                    text: "Open Profiles and add saved sequences in the order you want KeyClick to run them."
-                                    color: root.ink2
-                                    font.family: interRegular.name || root.font.family
-                                    font.pixelSize: 12
-                                    lineHeight: 1.3
-                                }
-                                KButton {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: "Choose profiles"
-                                    primary: true
-                                    implicitWidth: 150
-                                    onClicked: root.selectTab(1)
-                                }
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 84
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 0
-                                anchors.rightMargin: 0
-                                spacing: 8
-                                KButton {
-                                    objectName: "runQueueClearButton"
-                                    Layout.preferredWidth: 88
-                                    text: "Clear"
-                                    enabled: controller.runQueueCount > 0 && !controller.running
-                                    onClicked: controller.clearRunQueue()
-                                }
-                                Item { Layout.fillWidth: true }
-                                KButton {
-                                    objectName: "runQueueStopAllButton"
-                                    visible: controller.runQueueRunning
-                                    Layout.preferredWidth: 112
-                                    text: "Stop all"
-                                    leading: "■"
-                                    keyHint: "F9"
-                                    danger: true
-                                    Accessible.description: "Stop every active and waiting profile"
-                                    onClicked: controller.stopAllRuns()
-                                }
-                                KButton {
-                                    objectName: "runQueueStartButton"
-                                    Layout.preferredWidth: controller.runQueueMode === "parallel" ? 142 : 132
-                                    text: controller.runQueueRunning
-                                          ? "Running queue"
-                                          : controller.runQueueMode === "parallel"
-                                            ? "Run together"
-                                            : "Run queue"
-                                    leading: controller.runQueueRunning ? "●" : "▶"
-                                    primary: true
-                                    enabled: controller.runQueueCount > 0 && !controller.running
-                                    onClicked: controller.startRunQueue()
-                                }
-                            }
-                        }
-                    }
+                Pages.RunnerPage {
+                    app: root
                 }
             }
         }
@@ -1915,9 +945,9 @@ ApplicationWindow {
             height: 82
             z: 11
             radius: 18
-            color: root.surface
+            color: Theme.surface
             border.width: 1
-            border.color: root.line
+            border.color: Theme.line
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 16
@@ -1932,8 +962,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         text: controller.capturePending ? "Pick a point on the frozen screen · Esc cancels" : controller.running ? controller.status : controller.preflightBlocked ? controller.preflightSummary : controller.canRun ? "Ready when you are" : (actionList.count > 0 ? "Enable an action to begin" : "Add an action to begin")
                         elide: Text.ElideRight
-                        color: controller.preflightBlocked && !controller.running ? root.red : root.ink2
-                        font.family: interMedium.name || root.font.family
+                        color: controller.preflightBlocked && !controller.running ? Theme.red : Theme.ink2
+                        font.family: Theme.medium
                         font.pixelSize: 12
                     }
                     Item {
@@ -1943,9 +973,9 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.maximumWidth: 220
                         Layout.preferredHeight: 6
-                        Rectangle { anchors.fill: parent; radius: 3; color: root.surface3 }
+                        Rectangle { anchors.fill: parent; radius: 3; color: Theme.surface3 }
                         Rectangle {
-                            height: parent.height; radius: 3; color: root.primary
+                            height: parent.height; radius: 3; color: Theme.primary
                             width: controller.progress < 0 ? 34 : parent.width * Math.max(0, Math.min(1, controller.progress))
                             x: 0
                             SequentialAnimation on x {
@@ -1995,8 +1025,8 @@ ApplicationWindow {
                                     visible: root.layoutMode === "wide"
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData.label
-                                    color: root.ink2
-                                    font.family: interMedium.name || root.font.family
+                                    color: Theme.ink2
+                                    font.family: Theme.medium
                                     font.pixelSize: 11
                                 }
                             }
@@ -2065,7 +1095,7 @@ ApplicationWindow {
             z: 10
             clip: true
             border.width: root.overlayInspector ? 1 : 0
-            border.color: root.line
+            border.color: Theme.line
             Behavior on x { NumberAnimation { duration: 230; easing.type: Easing.OutCubic } }
             Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
@@ -2079,7 +1109,7 @@ ApplicationWindow {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Text { Layout.fillWidth: true; text: "Inspector"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 20; font.weight: Font.Bold }
+                    Text { Layout.fillWidth: true; text: "Inspector"; color: Theme.ink; font.family: Theme.bold; font.pixelSize: 20; font.weight: Font.Bold }
                     KButton { visible: root.overlayInspector; text: ""; leading: "×"; quiet: true; implicitWidth: 38; onClicked: root.inspectorOpen = false }
                 }
 
@@ -2087,7 +1117,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     radius: 12
-                    color: root.surface2
+                    color: Theme.surface2
                     Rectangle {
                         id: tabSelectionPill
                         objectName: "tabSelectionPill"
@@ -2096,7 +1126,7 @@ ApplicationWindow {
                         width: (parent.width - 6) / 2
                         height: parent.height - 6
                         radius: 9
-                        color: root.surface
+                        color: Theme.surface
                         layer.enabled: true
                         layer.effect: MultiEffect {
                             shadowEnabled: true
@@ -2123,7 +1153,7 @@ ApplicationWindow {
                                 height: parent.height
                                 radius: 9
                                 color: "transparent"
-                                Text { anchors.centerIn: parent; text: modelData; color: root.activeInspectorTab === index ? root.ink : root.ink3; font.family: interSemiBold.name || root.font.family; font.pixelSize: 12 }
+                                Text { anchors.centerIn: parent; text: modelData; color: root.activeInspectorTab === index ? Theme.ink : Theme.ink3; font.family: Theme.semiBold; font.pixelSize: 12 }
                                 TapHandler { onTapped: root.activeInspectorTab = index }
                             }
                         }
@@ -2226,7 +1256,7 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 implicitHeight: 44
                                 model: ["Key press", "Hotkey", "Type text", "Left click", "Right click", "Double click", "Middle click", "Scroll", "Drag"]
-                                font.family: interMedium.name || root.font.family
+                                font.family: Theme.medium
                                 font.pixelSize: 13
                                 leftPadding: 13
                                 rightPadding: 42
@@ -2236,7 +1266,7 @@ ApplicationWindow {
                                 }
                                 contentItem: Text {
                                     text: actionType.displayText
-                                    color: root.ink
+                                    color: Theme.ink
                                     font: actionType.font
                                     verticalAlignment: Text.AlignVCenter
                                     elide: Text.ElideRight
@@ -2245,8 +1275,8 @@ ApplicationWindow {
                                     x: actionType.width - width - 14
                                     y: (actionType.height - height) / 2
                                     text: "⌄"
-                                    color: root.ink2
-                                    font.family: interSemiBold.name || root.font.family
+                                    color: Theme.ink2
+                                    font.family: Theme.semiBold
                                     font.pixelSize: 20
                                     rotation: actionType.popup.visible ? 180 : 0
                                     Behavior on rotation { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -2255,7 +1285,7 @@ ApplicationWindow {
                                     radius: 11
                                     color: actionType.hovered || actionType.activeFocus ? "#FFFFFF" : "#F8F9FC"
                                     border.width: actionType.activeFocus || actionType.popup.visible ? 2 : 1
-                                    border.color: actionType.activeFocus || actionType.popup.visible ? root.primary : actionType.hovered ? "#BFC9D8" : root.line
+                                    border.color: actionType.activeFocus || actionType.popup.visible ? Theme.primary : actionType.hovered ? "#BFC9D8" : Theme.line
                                     Behavior on color { ColorAnimation { duration: 120 } }
                                     Behavior on border.color { ColorAnimation { duration: 120 } }
                                 }
@@ -2269,14 +1299,14 @@ ApplicationWindow {
                                     highlighted: actionType.highlightedIndex === index
                                     contentItem: Text {
                                         text: option.modelData
-                                        color: option.highlighted ? root.primary : root.ink
+                                        color: option.highlighted ? Theme.primary : Theme.ink
                                         font.family: option.highlighted ? interSemiBold.name : interMedium.name
                                         font.pixelSize: 13
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
                                         radius: 9
-                                        color: option.highlighted ? root.primarySoft : option.hovered ? "#F1F4F9" : "#00F1F4F9"
+                                        color: option.highlighted ? Theme.primarySoft : option.hovered ? "#F1F4F9" : "#00F1F4F9"
                                         Behavior on color { ColorAnimation { duration: 100 } }
                                     }
                                     onClicked: {
@@ -2303,9 +1333,9 @@ ApplicationWindow {
                                     }
                                     background: Rectangle {
                                         radius: 14
-                                        color: root.surface
+                                        color: Theme.surface
                                         border.width: 1
-                                        border.color: root.line
+                                        border.color: Theme.line
                                     }
                                 }
                             }
@@ -2350,7 +1380,7 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: visible ? 58 : 0
                                 radius: 13
-                                color: root.surface2
+                                color: Theme.surface2
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.leftMargin: 13
@@ -2358,8 +1388,8 @@ ApplicationWindow {
                                     ColumnLayout {
                                         Layout.fillWidth: true
                                         spacing: 2
-                                        Text { text: "Follow current pointer"; color: root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 12 }
-                                        Text { text: "Click wherever the pointer is during the run"; color: root.ink3; font.family: interRegular.name || root.font.family; font.pixelSize: 9 }
+                                        Text { text: "Follow current pointer"; color: Theme.ink; font.family: Theme.semiBold; font.pixelSize: 12 }
+                                        Text { text: "Click wherever the pointer is during the run"; color: Theme.ink3; font.family: Theme.regular; font.pixelSize: 9 }
                                     }
                                     Switch { id: followPointerSwitch; objectName: "followPointerSwitch" }
                                 }
@@ -2370,7 +1400,7 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: visible ? 62 : 0
                                 radius: 12
-                                color: root.redSoft
+                                color: Theme.redSoft
                                 border.width: 1
                                 border.color: "#F2C8D0"
                                 Text {
@@ -2384,8 +1414,8 @@ ApplicationWindow {
                                              ? "the selected browser tab"
                                              : "the selected window")
                                         + " before saving or running."
-                                    color: root.red
-                                    font.family: interMedium.name || root.font.family
+                                    color: Theme.red
+                                    font.family: Theme.medium
                                     font.pixelSize: 10
                                     lineHeight: 1.2
                                 }
@@ -2428,8 +1458,8 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 wrapMode: Text.WordWrap
                                 text: controller.capturePending ? "Choose a point on the frozen screen, or press Esc to cancel." : editor.desktopTarget ? "KeyClick hides, freezes and dims the screen so you can choose the exact point without rushing." : "Choose the point on a frozen screen. It will scale with the selected window when that window is resized."
-                                color: controller.capturePending ? root.primary : root.ink3
-                                font.family: interRegular.name || root.font.family
+                                color: controller.capturePending ? Theme.primary : Theme.ink3
+                                font.family: Theme.regular
                                 font.pixelSize: 10
                                 lineHeight: 1.2
                             }
@@ -2466,13 +1496,13 @@ ApplicationWindow {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 4
-                                    Text { text: "Repeats"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family }
+                                    Text { text: "Repeats"; color: Theme.ink2; font.pixelSize: 11; font.family: Theme.medium }
                                     KField { id: repeatsField; Layout.fillWidth: true; text: "1" }
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 4
-                                    Text { text: "Wait after"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family }
+                                    Text { text: "Wait after"; color: Theme.ink2; font.pixelSize: 11; font.family: Theme.medium }
                                     KField { id: delayField; Layout.fillWidth: true; text: "0.10" }
                                 }
                             }
@@ -2504,7 +1534,7 @@ ApplicationWindow {
                                 Layout.topMargin: visible ? 8 : 0
                                 Layout.preferredHeight: visible ? 54 : 0
                                 radius: 12
-                                color: root.primarySoft
+                                color: Theme.primarySoft
                                 border.width: 1
                                 border.color: "#B9CEFA"
                                 Text {
@@ -2513,8 +1543,8 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     text: "Record where this should happen first. Without a position "
                                         + "the action lands at the target's top-left corner."
-                                    color: root.primary
-                                    font.family: interMedium.name || root.font.family
+                                    color: Theme.primary
+                                    font.family: Theme.medium
                                     font.pixelSize: 11
                                 }
                             }
@@ -2569,9 +1599,9 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: preflightColumn.implicitHeight + 20
                                 radius: 13
-                                color: root.surface2
+                                color: Theme.surface2
                                 border.width: 1
-                                border.color: root.line
+                                border.color: Theme.line
 
                                 ColumnLayout {
                                     id: preflightColumn
@@ -2594,16 +1624,16 @@ ApplicationWindow {
                                                 Layout.alignment: Qt.AlignTop
                                                 Layout.topMargin: 2
                                                 width: 14; height: 14; radius: 7
-                                                color: modelData.status === "fail" ? root.redSoft
+                                                color: modelData.status === "fail" ? Theme.redSoft
                                                      : modelData.status === "warn" ? "#FFF3E0"
-                                                     : root.successSoft
+                                                     : Theme.successSoft
                                                 Text {
                                                     anchors.centerIn: parent
                                                     text: modelData.status === "fail" ? "×"
                                                         : modelData.status === "warn" ? "!" : "✓"
-                                                    color: modelData.status === "fail" ? root.red
-                                                         : modelData.status === "warn" ? "#B26A00" : root.green
-                                                    font.family: interSemiBold.name || root.font.family
+                                                    color: modelData.status === "fail" ? Theme.red
+                                                         : modelData.status === "warn" ? "#B26A00" : Theme.green
+                                                    font.family: Theme.semiBold
                                                     font.pixelSize: 9
                                                 }
                                             }
@@ -2614,8 +1644,8 @@ ApplicationWindow {
                                                     Layout.fillWidth: true
                                                     text: modelData.name + "  ·  " + modelData.detail
                                                     wrapMode: Text.WordWrap
-                                                    color: modelData.status === "fail" ? root.red : root.ink2
-                                                    font.family: interMedium.name || root.font.family
+                                                    color: modelData.status === "fail" ? Theme.red : Theme.ink2
+                                                    font.family: Theme.medium
                                                     font.pixelSize: 10
                                                     lineHeight: 1.2
                                                 }
@@ -2624,8 +1654,8 @@ ApplicationWindow {
                                                     Layout.fillWidth: true
                                                     text: modelData.remedy
                                                     wrapMode: Text.WordWrap
-                                                    color: root.ink3
-                                                    font.family: interRegular.name || root.font.family
+                                                    color: Theme.ink3
+                                                    font.family: Theme.regular
                                                     font.pixelSize: 10
                                                     lineHeight: 1.2
                                                 }
@@ -2636,13 +1666,13 @@ ApplicationWindow {
                             }
 
                             FormLabel { text: "TARGET"; Layout.topMargin: 6 }
-                            Text { text: "What should it automate?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
+                            Text { text: "What should it automate?"; color: Theme.ink; font.family: Theme.bold; font.pixelSize: 17 }
                             Text {
                                 Layout.fillWidth: true
                                 wrapMode: Text.WordWrap
                                 text: "Pick the thing you want automated. KeyClick works out how to reach it."
-                                color: root.ink2
-                                font.family: interRegular.name || root.font.family
+                                color: Theme.ink2
+                                font.family: Theme.regular
                                 font.pixelSize: 11
                                 lineHeight: 1.25
                             }
@@ -2652,9 +1682,9 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 108
                                 radius: 13
-                                color: root.surface2
+                                color: Theme.surface2
                                 border.width: 1
-                                border.color: root.line
+                                border.color: Theme.line
                                 ColumnLayout {
                                     anchors.fill: parent
                                     anchors.margins: 12
@@ -2665,8 +1695,8 @@ ApplicationWindow {
                                         objectName: "chosenTargetLabel"
                                         text: controller.targetSummary
                                         elide: Text.ElideMiddle
-                                        color: root.ink
-                                        font.family: interSemiBold.name || root.font.family
+                                        color: Theme.ink
+                                        font.family: Theme.semiBold
                                         font.pixelSize: 13
                                     }
                                     KButton {
@@ -2680,15 +1710,15 @@ ApplicationWindow {
                             }
 
                             FormLabel { text: "RUN PLAN" }
-                            Text { text: "Choose when it stops"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
-                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Run a fixed number of cycles or continue until you press Stop."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11; lineHeight: 1.25 }
+                            Text { text: "Choose when it stops"; color: Theme.ink; font.family: Theme.bold; font.pixelSize: 17 }
+                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Run a fixed number of cycles or continue until you press Stop."; color: Theme.ink2; font.family: Theme.regular; font.pixelSize: 11; lineHeight: 1.25 }
                             Rectangle {
-                                Layout.fillWidth: true; Layout.preferredHeight: 52; radius: 13; color: root.surface2
+                                Layout.fillWidth: true; Layout.preferredHeight: 52; radius: 13; color: Theme.surface2
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.leftMargin: 13
                                     anchors.rightMargin: 10
-                                    Text { Layout.fillWidth: true; text: "Loop indefinitely"; color: root.ink; font.family: interSemiBold.name || root.font.family; font.pixelSize: 12 }
+                                    Text { Layout.fillWidth: true; text: "Loop indefinitely"; color: Theme.ink; font.family: Theme.semiBold; font.pixelSize: 12 }
                                     Switch { id: foreverSwitch; checked: controller.runSettings.repeatForever; onToggled: controller.markRunSettingsPending() }
                                 }
                             }
@@ -2713,12 +1743,12 @@ ApplicationWindow {
                                     KField { id: jitter; Layout.fillWidth: true; text: controller.runSettings.jitter; onTextEdited: controller.markRunSettingsPending() }
                                 }
                             }
-                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line; Layout.topMargin: 10; Layout.bottomMargin: 5 }
+                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.line; Layout.topMargin: 10; Layout.bottomMargin: 5 }
                             FormLabel { text: "GLOBAL SHORTCUTS" }
-                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Use one key or a combination like ctrl+shift+s."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11 }
+                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Use one key or a combination like ctrl+shift+s."; color: Theme.ink2; font.family: Theme.regular; font.pixelSize: 11 }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Start / toggle"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                Text { text: "Start / toggle"; color: Theme.ink2; font.pixelSize: 11; font.family: Theme.medium; Layout.preferredWidth: 88 }
                                 KField { id: startHotkey; objectName: "startHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.startHotkey; invalid: runForm.shortcutValidation.startConflict; validationMessage: invalid ? runForm.shortcutValidation.message : ""; onTextChanged: root.shortcutCaptureError = ""; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_start"
@@ -2731,7 +1761,7 @@ ApplicationWindow {
                             }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Record pointer"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                Text { text: "Record pointer"; color: Theme.ink2; font.pixelSize: 11; font.family: Theme.medium; Layout.preferredWidth: 88 }
                                 KField { id: captureHotkey; objectName: "captureHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.captureHotkey; invalid: runForm.shortcutValidation.captureConflict; validationMessage: invalid ? runForm.shortcutValidation.message : ""; onTextChanged: root.shortcutCaptureError = ""; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_capture"
@@ -2744,7 +1774,7 @@ ApplicationWindow {
                             }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: "Emergency stop"; color: root.ink2; font.pixelSize: 11; font.family: interMedium.name || root.font.family; Layout.preferredWidth: 88 }
+                                Text { text: "Emergency stop"; color: Theme.ink2; font.pixelSize: 11; font.family: Theme.medium; Layout.preferredWidth: 88 }
                                 KField { id: stopHotkey; objectName: "stopHotkeyField"; Layout.fillWidth: true; text: controller.runSettings.stopHotkey; invalid: runForm.shortcutValidation.stopConflict; validationMessage: invalid ? runForm.shortcutValidation.message : ""; onTextChanged: root.shortcutCaptureError = ""; onTextEdited: controller.markRunSettingsPending() }
                                 KButton {
                                     objectName: "shortcutRecord_stop"
@@ -2760,8 +1790,8 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 visible: runForm.shortcutMessage.length > 0
                                 text: runForm.shortcutMessage
-                                color: root.red
-                                font.family: interSemiBold.name || root.font.family
+                                color: Theme.red
+                                font.family: Theme.semiBold
                                 font.pixelSize: 11
                                 wrapMode: Text.WordWrap
                                 Accessible.name: text
@@ -2776,606 +1806,30 @@ ApplicationWindow {
     }
 
 
-    Dialog {
+    Dialogs.RecoveryDialog {
         id: recoveryDialog
-        objectName: "recoveryDialog"
-        modal: true
-        closePolicy: Popup.NoAutoClose
-        width: 440
-        height: 258
-        x: Math.round((root.width - width) / 2)
-        y: Math.round((root.height - height) / 2)
-        padding: 22
-        background: Rectangle {
-            radius: 18
-            color: root.surface
-            border.width: 1
-            border.color: root.line
-        }
-        contentItem: ColumnLayout {
-            spacing: 10
-            Text { text: "Recover your sequence?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 20; font.weight: Font.Bold }
-            Text {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: "KeyClick found an autosaved recovery copy from the previous session.\n" + controller.draftSummary
-                color: root.ink2
-                font.family: interRegular.name || root.font.family
-                font.pixelSize: 12
-                lineHeight: 1.3
-            }
-            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                Item { Layout.fillWidth: true }
-                KButton {
-                    objectName: "recoveryDiscardButton"
-                    Layout.preferredWidth: 88
-                    text: "Discard"
-                    danger: true
-                    onClicked: {
-                        controller.discardDraft()
-                        recoveryDialog.close()
-                    }
-                }
-                KButton {
-                    objectName: "recoveryAcceptButton"
-                    Layout.preferredWidth: 148
-                    text: "Recover sequence"
-                    primary: true
-                    onClicked: {
-                        if (controller.recoverDraft()) {
-                            recoveryDialog.close()
-                            if (controller.selectedIndex >= 0) {
-                                root.editorIndex = controller.selectedIndex
-                                editor.loadAction(controller.selectedIndex)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        app: root
     }
 
 
-    Dialog {
+    Dialogs.TargetPickerDialog {
         id: targetPickerDialog
-        objectName: "targetPickerDialog"
-        parent: Overlay.overlay
-        modal: true
-        closePolicy: Popup.CloseOnEscape
-        width: Math.min(720, root.width - 48)
-        height: Math.min(600, root.height - 64)
-        x: Math.round((root.width - width) / 2)
-        y: Math.round((root.height - height) / 2)
-        padding: 0
-        background: Rectangle {
-            radius: 18
-            color: root.surface
-            border.width: 1
-            border.color: root.line
-        }
-        contentItem: ColumnLayout {
-            spacing: 0
-            clip: true
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 88
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 20
-                    anchors.rightMargin: 14
-                    spacing: 8
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        Text {
-                            text: "What should it automate?"
-                            color: root.ink
-                            font.family: interBold.name || root.font.family
-                            font.pixelSize: 20
-                            font.weight: Font.Bold
-                        }
-                        Text {
-                            text: "Your computer, an open window, or a browser tab"
-                            color: root.ink2
-                            font.family: interRegular.name || root.font.family
-                            font.pixelSize: 12
-                        }
-                    }
-                    KButton {
-                        objectName: "refreshTargetsButton"
-                        text: "Refresh"
-                        leading: "↻"
-                        implicitWidth: 96
-                        onClicked: controller.refreshAutomationTargets()
-                    }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-            Item {
-                objectName: "startBrowserPrompt"
-                visible: !controller.browserReady
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 60 : 0
-                Layout.leftMargin: 14
-                Layout.rightMargin: 14
-                Layout.topMargin: visible ? 10 : 0
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 13
-                    color: root.primarySoft
-                    border.width: 1
-                    border.color: "#B9CEFA"
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 14
-                        anchors.rightMargin: 10
-                        spacing: 10
-                        Text {
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                            text: "Browser tabs appear once KeyClick's automation browser is running."
-                            color: root.primary
-                            font.family: interMedium.name || root.font.family
-                            font.pixelSize: 11
-                        }
-                        KButton {
-                            objectName: "startBrowserFromPickerButton"
-                            implicitWidth: 150
-                            primary: true
-                            text: "Start browser"
-                            onClicked: {
-                                controller.startBrowser()
-                                controller.refreshAutomationTargets()
-                            }
-                        }
-                    }
-                }
-            }
-
-            ListView {
-                objectName: "automationTargetList"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.leftMargin: 14
-                Layout.rightMargin: 14
-                Layout.topMargin: 10
-                spacing: 8
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                model: controller.automationTargets
-                ScrollBar.vertical: KScrollBar { id: targetScrollBar; objectName: "targetPickerScrollBar" }
-
-                delegate: AbstractButton {
-                    id: targetRow
-                    required property var modelData
-                    required property int index
-                    property bool pointerHover: false
-                    objectName: "automationTarget_" + index
-                    width: ListView.view.width
-                           - (targetScrollBar.visible ? targetScrollBar.width + 8 : 0)
-                    height: modelData.advice === "" ? 66 : 84
-                    leftPadding: 14
-                    rightPadding: 14
-                    hoverEnabled: true
-                    Accessible.name: "Automate " + targetRow.modelData.title
-                    HoverHandler { onHoveredChanged: targetRow.pointerHover = hovered }
-                    onClicked: {
-                        if (controller.selectAutomationTarget(
-                                targetRow.modelData.kind, targetRow.modelData.id))
-                            targetPickerDialog.close()
-                    }
-                    background: Rectangle {
-                        radius: 13
-                        color: targetRow.modelData.current ? root.primarySoft
-                             : targetRow.down ? "#E8EEF8"
-                             : targetRow.pointerHover ? "#F4F7FF"
-                             : root.surface
-                        border.width: 1
-                        border.color: targetRow.modelData.current ? "#B9CEFA" : root.line
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                    }
-                    contentItem: RowLayout {
-                        spacing: 11
-                        Rectangle {
-                            visible: targetRow.modelData.previewUrl !== ""
-                            Layout.preferredWidth: visible ? 68 : 0
-                            Layout.preferredHeight: 42
-                            radius: 8
-                            color: root.surface3
-                            border.width: 1
-                            border.color: root.line
-                            clip: true
-                            Image {
-                                anchors.fill: parent
-                                anchors.margins: 1
-                                source: targetRow.modelData.previewUrl
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                smooth: true
-                            }
-                        }
-                        Rectangle {
-                            Layout.preferredWidth: 54
-                            Layout.preferredHeight: 22
-                            radius: 7
-                            color: targetRow.modelData.kind === "browser" ? "#E4F1FF"
-                                 : targetRow.modelData.kind === "window" ? root.surface3
-                                 : root.successSoft
-                            Text {
-                                anchors.centerIn: parent
-                                text: targetRow.modelData.kind === "browser" ? "TAB"
-                                    : targetRow.modelData.kind === "window" ? "WINDOW" : "PC"
-                                color: targetRow.modelData.kind === "browser" ? root.primary
-                                     : targetRow.modelData.kind === "window" ? root.ink2
-                                     : root.green
-                                font.family: interSemiBold.name || root.font.family
-                                font.pixelSize: 8
-                                font.letterSpacing: 0.4
-                            }
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 1
-                            Text {
-                                Layout.fillWidth: true
-                                text: targetRow.modelData.title
-                                elide: Text.ElideRight
-                                color: root.ink
-                                font.family: interSemiBold.name || root.font.family
-                                font.pixelSize: 13
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: targetRow.modelData.subtitle
-                                elide: Text.ElideMiddle
-                                color: root.ink3
-                                font.family: interRegular.name || root.font.family
-                                font.pixelSize: 10
-                            }
-                            Text {
-                                visible: targetRow.modelData.minimized === true
-                                Layout.fillWidth: true
-                                text: "Minimised \u00b7 restore it before running"
-                                color: root.ink3
-                                font.family: interRegular.name || root.font.family
-                                font.pixelSize: 10
-                            }
-                            Text {
-                                visible: targetRow.modelData.advice !== ""
-                                Layout.fillWidth: true
-                                text: targetRow.modelData.advice
-                                wrapMode: Text.WordWrap
-                                color: "#B26A00"
-                                font.family: interMedium.name || root.font.family
-                                font.pixelSize: 10
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 66
-                KButton {
-                    objectName: "closeTargetPickerButton"
-                    anchors.right: parent.right
-                    anchors.rightMargin: 16
-                    anchors.verticalCenter: parent.verticalCenter
-                    implicitWidth: 110
-                    text: "Close"
-                    onClicked: targetPickerDialog.close()
-                }
-            }
-        }
+        app: root
     }
 
-    Dialog {
+    Dialogs.ProfileHistoryDialog {
         id: profileHistoryDialog
-        objectName: "profileHistoryDialog"
-        parent: Overlay.overlay
-        modal: true
-        closePolicy: Popup.CloseOnEscape
-        width: Math.min(620, root.width - 48)
-        height: Math.min(520, root.height - 64)
-        x: Math.round((root.width - width) / 2)
-        y: Math.round((root.height - height) / 2)
-        padding: 0
-        property string profilePath: ""
-        property string profileLabel: ""
-        property var entries: []
-        background: Rectangle {
-            radius: 18
-            color: root.surface
-            border.width: 1
-            border.color: root.line
-        }
-        contentItem: ColumnLayout {
-            spacing: 0
-            clip: true
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 82
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 20
-                    anchors.rightMargin: 20
-                    spacing: 3
-                    Item { Layout.fillHeight: true }
-                    Text {
-                        text: "Earlier versions"
-                        color: root.ink
-                        font.family: interBold.name || root.font.family
-                        font.pixelSize: 20
-                        font.weight: Font.Bold
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: profileHistoryDialog.profileLabel
-                        elide: Text.ElideMiddle
-                        color: root.ink2
-                        font.family: interRegular.name || root.font.family
-                        font.pixelSize: 12
-                    }
-                    Item { Layout.fillHeight: true }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-            Item {
-                objectName: "profileHistoryEmptyState"
-                visible: profileHistoryDialog.entries.length === 0
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 120 : 0
-                Text {
-                    anchors.centerIn: parent
-                    width: parent.width - 60
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.WordWrap
-                    text: "No earlier versions yet. KeyClick keeps a copy each time you save over this profile."
-                    color: root.ink3
-                    font.family: interRegular.name || root.font.family
-                    font.pixelSize: 12
-                }
-            }
-
-            ListView {
-                objectName: "profileHistoryList"
-                visible: profileHistoryDialog.entries.length > 0
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.leftMargin: 14
-                Layout.rightMargin: 14
-                Layout.topMargin: 10
-                spacing: 8
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                model: profileHistoryDialog.entries
-                ScrollBar.vertical: KScrollBar { id: historyScrollBar }
-
-                delegate: Rectangle {
-                    required property var modelData
-                    required property int index
-                    objectName: "profileHistoryRow_" + index
-                    width: ListView.view.width
-                           - (historyScrollBar.visible ? historyScrollBar.width + 8 : 0)
-                    height: 60
-                    radius: 13
-                    color: root.surface
-                    border.width: 1
-                    border.color: root.line
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 14
-                        anchors.rightMargin: 10
-                        spacing: 10
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Text {
-                                text: modelData.label
-                                color: root.ink
-                                font.family: interSemiBold.name || root.font.family
-                                font.pixelSize: 12
-                            }
-                            Text {
-                                text: modelData.actionCount < 0
-                                      ? "Unreadable copy"
-                                      : modelData.actionCount === 1
-                                        ? "1 action"
-                                        : modelData.actionCount + " actions"
-                                color: modelData.actionCount < 0 ? root.red : root.ink3
-                                font.family: interRegular.name || root.font.family
-                                font.pixelSize: 11
-                            }
-                        }
-                        KButton {
-                            objectName: "restoreProfileVersion_" + index
-                            implicitWidth: 96
-                            text: "Restore"
-                            leading: "↺"
-                            enabled: modelData.actionCount >= 0
-                            onClicked: {
-                                if (controller.restoreProfileVersion(
-                                        profileHistoryDialog.profilePath, modelData.path))
-                                    profileHistoryDialog.close()
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 66
-                KButton {
-                    objectName: "closeProfileHistoryButton"
-                    anchors.right: parent.right
-                    anchors.rightMargin: 16
-                    anchors.verticalCenter: parent.verticalCenter
-                    implicitWidth: 110
-                    text: "Close"
-                    onClicked: profileHistoryDialog.close()
-                }
-            }
-        }
+        app: root
     }
 
-    Dialog {
+    Dialogs.DeleteProfileDialog {
         id: deleteProfileDialog
-        objectName: "deleteProfileDialog"
-        modal: true
-        closePolicy: Popup.NoAutoClose
-        width: 460
-        height: 246
-        x: Math.round((root.width - width) / 2)
-        y: Math.round((root.height - height) / 2)
-        padding: 22
-        property string profilePath: ""
-        property string profileLabel: ""
-        background: Rectangle {
-            radius: 18
-            color: root.surface
-            border.width: 1
-            border.color: root.line
-        }
-        contentItem: ColumnLayout {
-            spacing: 10
-            Text {
-                text: "Delete this profile?"
-                color: root.ink
-                font.family: interBold.name || root.font.family
-                font.pixelSize: 20
-                font.weight: Font.Bold
-            }
-            Text {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: "“" + deleteProfileDialog.profileLabel + "” will be deleted from disk. "
-                    + "This cannot be undone. The sequence open in the editor is kept."
-                color: root.ink2
-                font.family: interRegular.name || root.font.family
-                font.pixelSize: 12
-                lineHeight: 1.3
-            }
-            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                KButton {
-                    objectName: "cancelDeleteProfileButton"
-                    text: "Cancel"
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                    onClicked: {
-                        deleteProfileDialog.profilePath = ""
-                        deleteProfileDialog.close()
-                    }
-                }
-                KButton {
-                    objectName: "confirmDeleteProfileButton"
-                    text: "Delete"
-                    leading: "×"
-                    danger: true
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                    onClicked: {
-                        var target = deleteProfileDialog.profilePath
-                        deleteProfileDialog.profilePath = ""
-                        deleteProfileDialog.close()
-                        controller.deleteProfilePath(target)
-                    }
-                }
-            }
-        }
+        app: root
     }
 
-    Dialog {
+    Dialogs.UnsavedChangesDialog {
         id: unsavedDialog
-        objectName: "unsavedChangesDialog"
-        modal: true
-        closePolicy: Popup.NoAutoClose
-        width: 460
-        height: 258
-        x: Math.round((root.width - width) / 2)
-        y: Math.round((root.height - height) / 2)
-        padding: 22
-        background: Rectangle {
-            radius: 18
-            color: root.surface
-            border.width: 1
-            border.color: root.line
-        }
-        contentItem: ColumnLayout {
-            spacing: 10
-            Text { text: "Save your changes?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 20; font.weight: Font.Bold }
-            Text {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: root.pendingDestructiveAction === "close" ? "This sequence has unsaved changes. Save it before closing KeyClick, discard the changes, or return to the editor." : "This sequence has unsaved changes. Save it before continuing, discard the changes, or cancel."
-                color: root.ink2
-                font.family: interRegular.name || root.font.family
-                font.pixelSize: 12
-                lineHeight: 1.3
-            }
-            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                KButton {
-                    objectName: "unsavedCancelButton"
-                    text: "Cancel"
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                    onClicked: {
-                        root.pendingDestructiveAction = ""
-                        root.pendingProfilePath = ""
-                        unsavedDialog.close()
-                    }
-                }
-                KButton {
-                    objectName: "unsavedDiscardButton"
-                    text: "Discard"
-                    danger: true
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                    onClicked: {
-                        var action = root.pendingDestructiveAction
-                        root.pendingDestructiveAction = ""
-                        unsavedDialog.close()
-                        root.performDestructiveAction(action)
-                    }
-                }
-                KButton {
-                    objectName: "unsavedSaveButton"
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                    text: "Save & continue"
-                    primary: true
-                    onClicked: {
-                        var action = root.pendingDestructiveAction
-                        if (root.saveProfileWithVisibleSettings()) {
-                            root.pendingDestructiveAction = ""
-                            unsavedDialog.close()
-                            root.performDestructiveAction(action)
-                        }
-                    }
-                }
-            }
-        }
+        app: root
     }
 
     Rectangle {
@@ -3387,7 +1841,7 @@ ApplicationWindow {
         width: Math.min(toastTextLimit + 54, toastText.contentWidth + 54)
         height: Math.max(48, toastText.contentHeight + 26)
         radius: 14
-        color: toast.tone === "error" ? root.redSoft : toast.tone === "success" ? root.successSoft : root.primarySoft
+        color: toast.tone === "error" ? Theme.redSoft : toast.tone === "success" ? Theme.successSoft : Theme.primarySoft
         border.width: 1
         border.color: toast.tone === "error" ? "#F3B8C2" : toast.tone === "success" ? "#A9DFC9" : "#B9CEFA"
         anchors.horizontalCenter: parent.horizontalCenter
@@ -3402,7 +1856,7 @@ ApplicationWindow {
         Row {
             anchors.centerIn: parent
             spacing: 9
-            Rectangle { width: 8; height: 8; radius: 4; color: toast.tone === "error" ? root.red : toast.tone === "success" ? root.green : root.primary; anchors.verticalCenter: parent.verticalCenter }
+            Rectangle { width: 8; height: 8; radius: 4; color: toast.tone === "error" ? Theme.red : toast.tone === "success" ? Theme.green : Theme.primary; anchors.verticalCenter: parent.verticalCenter }
             Text {
                 id: toastText
                 objectName: "toastText"
@@ -3411,8 +1865,8 @@ ApplicationWindow {
                 wrapMode: Text.WordWrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
-                color: toast.tone === "error" ? root.red : toast.tone === "success" ? root.green : root.ink
-                font.family: interSemiBold.name || root.font.family
+                color: toast.tone === "error" ? Theme.red : toast.tone === "success" ? Theme.green : Theme.ink
+                font.family: Theme.semiBold
                 font.pixelSize: 12
                 anchors.verticalCenter: parent.verticalCenter
             }

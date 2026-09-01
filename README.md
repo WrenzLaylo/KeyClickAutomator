@@ -39,7 +39,9 @@ and stop the automation immediately whenever you need to.
 - Left, right, double, and middle mouse clicks
 - Click at a saved position or wherever the pointer is currently moving
 - Send actions to one background window while your physical mouse stays free
-- Choose Desktop or an open app from a visual window picker
+- Drive a single Chrome tab, even while it is hidden or its window is minimised
+- Pick your computer, an open window, or a browser tab from one list
+- Refuses to start a run that cannot work, and says what to fix
 - Record precise points on a frozen, dimmed copy of the screen
 - Keep window-relative pointer positions aligned when the target is resized
 - Scrolling and pointer dragging
@@ -72,9 +74,9 @@ portable app or installer exactly matches the file published with that release.
 1. Open KeyClick Automator.
 2. Open the **Profiles** tab or press `Ctrl+O` to switch to a saved sequence without
    leaving KeyClick. To start fresh, select **Create first action** or **New action**.
-3. In the **Run** inspector, keep **Desktop** for normal automation or choose
-   **Background window**. The visual picker shows Desktop and the open apps on
-   your computer; select the exact window you want to automate.
+3. In the **Run** inspector, select **Change what it automates**. One list shows
+   this computer, every open window, and every tab in KeyClick's automation
+   browser. Pick the thing you want automated; KeyClick works out how to reach it.
 4. Choose an action type and enter its details.
 5. For a fixed mouse target, select **Pick pointer position**. KeyClick hides,
    freezes, and dims the current desktop; click the exact point without rushing,
@@ -123,10 +125,9 @@ need a defined target or path.
 
 ### Automate one window in the background
 
-In the **Run** inspector, choose **Background window**. A visual picker lists the
-Desktop and usable open windows, including browser meetings, Discord, Zoom, and
-other apps. Select a preview to make that exact window the target. Use **Refresh**
-after opening or restoring another app.
+Choose an open window from the target picker. Each entry shows a live preview,
+so you can tell two windows of the same app apart. Use **Refresh** after opening
+or restoring another app.
 
 Record mouse positions again in this mode so they are saved relative to that
 window instead of the desktop. KeyClick also records the window's content size.
@@ -147,6 +148,31 @@ reject message-based input. Use **Test once** before a repeating run. If the
 target becomes unstable or closes, do not retry it in background mode; switch to
 **Desktop** mode instead. KeyClick blocks desktop-relative actions from running
 in window mode (and vice versa) until their positions are recorded again.
+
+### Automate one browser tab
+
+Web pages cannot be automated as background windows. A browser draws the page
+itself and leaves no window underneath it to receive a click, so those clicks
+arrive nowhere while appearing to succeed. KeyClick refuses that combination and
+points you here instead.
+
+Select **Change what it automates**, then **Start browser**. KeyClick opens Chrome
+in its own profile, separate from your everyday windows — Chrome does not allow
+automation of your normal profile. Open the page you want, refresh the list, and
+pick its tab.
+
+Positions are recorded by clicking in the page itself, so there is no screen
+arithmetic to get wrong, and they follow the page when the window is resized.
+While the sequence runs, input goes to that one tab: your pointer stays free,
+every other tab, window, and Chrome profile is untouched, and it keeps working
+while the tab sits behind another tab and its window is minimised.
+
+After a run KeyClick reports what the page actually received, for example
+`240 confirmed on button#bigCookie`. If it reports that the page received none
+of them, the recorded position is no longer over the element you meant.
+
+Pages usually ignore input sent faster than they can process. A short wait
+between clicks often delivers more of them than no wait at all.
 
 ## Controls and safety
 
@@ -200,20 +226,36 @@ highlighted while automation runs. Before a long or repeating run, make sure
 
 ## What's new in 3.5.0
 
-- **Multi-Profile Runner**: queue several saved profiles and run them one after
-  another, or run up to eight background-window profiles together in parallel,
-  with per-profile pause, resume, and stop
-- **Tabbed navigation**: Sequence, Profiles, and Runner are now top-level tabs
-  instead of two side drawers, so nothing slides over the sequence you are editing.
-  Save and New sequence moved into the header, and the `F6`/`F8`/`F9` hints moved
-  into the run bar
-- A run now keeps reporting its step and progress even when the Runner's mode is
-  set to Parallel; previously the status froze on "Armed" for the whole run
-- A click set to **Follow current pointer** no longer has to be recorded again
-  after switching the target from a background window to Desktop, because a
-  follow-pointer click has no saved position to correct
+- **Browser tab automation**: target one Chrome tab and drive only that tab.
+  Your pointer stays free, other Chrome windows and profiles are untouched, and
+  it keeps working while the tab is hidden behind another tab and its window is
+  minimised. Background-window mode never could click a web page: browsers draw
+  page content themselves and leave no window under it to receive a click
+- **One target picker**: choose your computer, an open window, or a browser tab
+  from a single list, and KeyClick works out how to reach it. A browser window is
+  still listed, but tells you to pick that app's tab instead, and why
+- **Checks before every run**: Start refuses a sequence that cannot work and says
+  what to fix — a click whose position was never recorded, positions recorded for
+  a different target, an unreachable window or a closed tab
+- **Honest run reports**: a browser run confirms what the page actually received,
+  so it reads `240 confirmed on button#bigCookie` rather than only "Complete"
+- **Earlier versions of every profile**: each save and delete keeps a copy first,
+  and any profile row can restore one. Restoring is itself undoable
+- **Multi-Profile Runner**: queue saved profiles and run them one after another,
+  or run up to eight background-window or browser-tab profiles together, with
+  per-profile pause, resume, and stop
+- **Tabbed navigation**: Sequence, Profiles, and Runner are top-level tabs rather
+  than side drawers, so nothing slides over the sequence you are editing
+- Saved profiles can be deleted from the Profiles page, with confirmation
+- Window targets survive a changing title bar, so a page that writes live data
+  into its title stays matched instead of becoming ambiguous
+- A run reports its step and progress even when the Runner is set to Parallel
+- A **Follow current pointer** click no longer has to be recorded again after the
+  target changes, because it has no saved position to correct
+- Buttons no longer separate from their label when pressed, hovering a tab no
+  longer flashes dark, and hover tooltips that only repeated a button's own label
+  are gone
 - Long status messages wrap inside the toast instead of spilling past its edges
-- Profile rows keep their trailing chevron inside the card
 
 ### Previous release: 3.4.4
 
@@ -268,7 +310,7 @@ highlighted while automation runs. Before a long or repeating run, make sure
 
 | Version | Summary |
 | --- | --- |
-| 3.5.0 | Multi-Profile Runner, tabbed navigation, and follow-pointer/target fixes |
+| 3.5.0 | Browser tab automation, one target picker, pre-run checks, confirmed delivery, and profile history |
 | 3.4.4 | Correct modified-hotkey capture, centered compact controls, and anchored sequence dragging |
 | 3.4.3 | Overflow-only scrolling, stable window picking, recorder handoff, and UI polish |
 | 3.4.2 | Complete-chord shortcut safety, earlier validation, UI containment, and project polish |

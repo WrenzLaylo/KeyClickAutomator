@@ -2025,6 +2025,7 @@ ApplicationWindow {
 
         Rectangle {
             id: inspector
+            objectName: "runInspector"
             visible: root.inspectorVisible
             width: root.layoutMode === "wide" ? 368 : root.layoutMode === "medium" ? 340 : Math.min(380, root.width - 84)
             x: root.overlayInspector ? (root.inspectorOpen ? root.width - width : root.width + 8) : root.width - width

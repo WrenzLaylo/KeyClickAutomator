@@ -143,7 +143,8 @@ def test_workspace_tabs_switch_pages_and_collapse_labels_when_narrow():
     ]
     stack = window.findChild(QQuickItem, "workspaceStack")
     inspector_pane = window.findChild(QQuickItem, "runInspector")
-    assert all(tab is not None for tab in tabs) and stack is not None
+    assert all(tab is not None for tab in tabs)
+    assert stack is not None and inspector_pane is not None
 
     # Exactly one tab reads as selected, and it tracks the visible page.
     for index in (0, 1, 2):
@@ -152,9 +153,8 @@ def test_workspace_tabs_switch_pages_and_collapse_labels_when_narrow():
             position == index for position in range(3)
         ]
         assert stack.property("currentIndex") == index
-        if inspector_pane is not None:
-            # The inspector edits the sequence, so it only rides along with that tab.
-            assert inspector_pane.isVisible() is (index == 0)
+        # The inspector edits the sequence, so it only rides along with that tab.
+        assert inspector_pane.isVisible() is (index == 0)
 
     show_tab(window, 0, settle=120)
     wide_widths = [tab.width() for tab in tabs]

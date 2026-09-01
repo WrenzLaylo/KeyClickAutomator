@@ -58,6 +58,7 @@ from chrome_backend import (
     wait_for_browser,
 )
 from preflight import Check, blocking_failures, preflight
+from profile_history import restore as restore_version, snapshot, versions
 from run_session import RunSession
 from shortcut_service import global_shortcut_conflicts, pynput_hotkey
 from window_backend import (
@@ -2637,6 +2638,12 @@ class AutomatorController(QObject):
     def _save_profile_path(self, path: str | Path) -> bool:
         normalized = normalize_path(path)
         try:
+            # Keep what is on disk before overwriting it. Saving is the most
+            # destructive action in the app and used to be the least reversible.
+            try:
+                snapshot(normalized)
+            except OSError:
+                pass  # history is a safety net, never a reason to block a save
             save_profile(normalized, self.actions, self._run_settings)
             self._set_profile_directory(Path(normalized).parent)
             self._set_current_profile(normalized)
@@ -2693,6 +2700,32 @@ class AutomatorController(QObject):
             self.toast.emit(str(exc), "error")
             return False
 
+    @Slot(str, result="QVariantList")
+    def profileVersions(self, path: str) -> list[dict[str, object]]:
+        if not path:
+            return []
+        return [version.as_entry() for version in versions(normalize_path(path))]
+
+    @Slot(str, str, result=bool)
+    def restoreProfileVersion(self, path: str, version_path: str) -> bool:
+        if self._running or self._queue_active:
+            self.toast.emit("Stop the current run before restoring a version.", "error")
+            return False
+        normalized = normalize_path(path)
+        try:
+            restore_version(normalized, version_path)
+        except OSError as exc:
+            self.toast.emit(str(exc), "error")
+            return False
+        self.refreshProfiles()
+        if (
+            self._current_profile_path
+            and self._path_key(self._current_profile_path) == self._path_key(normalized)
+        ):
+            self.openProfilePath(normalized)
+        self.toast.emit(f"Restored {profile_name(normalized)}", "success")
+        return True
+
     @Slot(str, result=bool)
     def deleteProfilePath(self, path: str) -> bool:
         """Delete a saved profile file. The open sequence is never discarded."""
@@ -2702,6 +2735,10 @@ class AutomatorController(QObject):
         normalized = normalize_path(path)
         name = profile_name(normalized)
         try:
+            try:
+                snapshot(normalized)
+            except OSError:
+                pass
             Path(normalized).unlink()
         except FileNotFoundError:
             self.toast.emit(f"{name} was already gone.", "neutral")

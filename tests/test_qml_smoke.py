@@ -1361,3 +1361,40 @@ def test_editing_the_sequence_from_another_tab_lands_you_on_the_sequence(tmp_pat
 
     window.close()
     controller.shutdown()
+
+
+def test_a_saved_over_profile_can_be_restored_from_the_profiles_page(tmp_path):
+    """End to end for the accident that emptied two real profiles."""
+    from engine import Action, RunSettings, save_profile
+
+    path = tmp_path / "Mine.kca.json"
+    save_profile(path, [Action("key", value="a"), Action("key", value="b")],
+                 RunSettings(start_delay=0))
+    engine, controller = build_engine(start_hotkeys=False, profile_directory=tmp_path)
+    window = engine.rootObjects()[0]
+    window.setWidth(1360)
+    window.setHeight(900)
+    controller.openProfilePath(str(path))
+
+    # Overwrite it with an empty sequence, exactly as a stray click would.
+    controller.clearActions()
+    controller._save_profile_path(str(path))
+    assert controller.actionModel.rowCount() == 0
+
+    show_tab(window, 1, settle=250)
+    history_button = visual_children_named(window.contentItem(), "profileHistoryButton_")[0]
+    QMetaObject.invokeMethod(history_button, "click", Qt.DirectConnection)
+    QTest.qWait(250)
+
+    dialog = window.findChild(QObject, "profileHistoryDialog")
+    assert dialog.property("opened") is True
+    rows = visual_children_named(window.contentItem(), "profileHistoryRow_")
+    assert rows, "the overwritten version should be listed"
+
+    restore = visual_children_named(window.contentItem(), "restoreProfileVersion_")[0]
+    QMetaObject.invokeMethod(restore, "click", Qt.DirectConnection)
+    QTest.qWait(300)
+
+    assert [action.value for action in controller.actions] == ["a", "b"]
+    window.close()
+    controller.shutdown()

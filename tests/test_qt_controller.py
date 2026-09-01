@@ -1571,3 +1571,58 @@ def test_the_completion_message_says_what_the_page_actually_received():
     )
     # Desktop and window runs have no backend to ask.
     assert report("Run complete", None) == "Run complete"
+
+
+def test_saving_over_a_profile_keeps_the_previous_version(tmp_path):
+    """The accident that emptied two real profiles is now recoverable."""
+    path = tmp_path / "Mine.kca.json"
+    save_profile(path, [Action("key", value="a"), Action("key", value="b")],
+                 RunSettings(start_delay=0))
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    assert controller.openProfilePath(str(path)) is True
+
+    controller.clearActions()
+    controller.addAction({"kind": "key", "value": "z"})
+    assert controller._save_profile_path(str(path)) is True
+
+    history = controller.profileVersions(str(path))
+    assert history and history[0]["actionCount"] == 2
+
+    assert controller.restoreProfileVersion(str(path), history[0]["path"]) is True
+    assert [action.value for action in controller.actions] == ["a", "b"]
+    controller.shutdown()
+
+
+def test_deleting_a_profile_keeps_a_recoverable_copy(tmp_path):
+    path = tmp_path / "Doomed.kca.json"
+    save_profile(path, [Action("key", value="a")], RunSettings(start_delay=0))
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+
+    assert controller.deleteProfilePath(str(path)) is True
+
+    assert path.exists() is False
+    assert controller.profileVersions(str(path))[0]["actionCount"] == 1
+    controller.shutdown()
+
+
+def test_a_version_cannot_be_restored_while_a_run_is_active(tmp_path):
+    path = tmp_path / "Busy.kca.json"
+    save_profile(path, [Action("key", value="a")], RunSettings(start_delay=0))
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    controller._save_profile_path(str(path))
+    version = controller.profileVersions(str(path))[0]["path"]
+    controller._set_running(True)
+
+    assert controller.restoreProfileVersion(str(path), version) is False
+    controller.shutdown()
+
+
+def test_saved_versions_never_appear_in_the_profile_library(tmp_path):
+    path = tmp_path / "Mine.kca.json"
+    save_profile(path, [Action("key", value="a")], RunSettings(start_delay=0))
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    controller._save_profile_path(str(path))
+    controller._save_profile_path(str(path))
+
+    assert [entry["name"] for entry in controller.profileEntries] == ["Mine"]
+    controller.shutdown()

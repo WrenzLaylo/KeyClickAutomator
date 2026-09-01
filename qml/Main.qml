@@ -169,6 +169,15 @@ ApplicationWindow {
         root.requestDestructiveAction("profile")
     }
 
+    function openProfileHistory(path, label) {
+        if (controller.running)
+            return
+        profileHistoryDialog.profilePath = path
+        profileHistoryDialog.profileLabel = label
+        profileHistoryDialog.entries = controller.profileVersions(path)
+        profileHistoryDialog.open()
+    }
+
     function requestProfileDelete(path, label) {
         if (controller.running)
             return
@@ -1311,6 +1320,23 @@ ApplicationWindow {
                                     }
                                 }
                                     KButton {
+                                        id: profileHistoryButton
+                                        objectName: "profileHistoryButton_" + profileDelegate.index
+                                        anchors.right: deleteProfileButton.left
+                                        anchors.rightMargin: 6
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        implicitWidth: 42
+                                        implicitHeight: 38
+                                        leading: "↺"
+                                        quiet: true
+                                        enabled: !controller.running && !controller.runQueueRunning
+                                        Accessible.name: "Earlier versions of " + profileDelegate.modelData.name
+                                        onClicked: root.openProfileHistory(
+                                            profileDelegate.profilePath,
+                                            profileDelegate.modelData.name
+                                        )
+                                    }
+                                    KButton {
                                         id: deleteProfileButton
                                         objectName: "deleteProfileButton_" + profileDelegate.index
                                         anchors.right: parent.right
@@ -1330,7 +1356,7 @@ ApplicationWindow {
                                     KButton {
                                         id: queueProfileButton
                                         objectName: "queueProfileButton_" + profileDelegate.index
-                                        anchors.right: deleteProfileButton.left
+                                        anchors.right: profileHistoryButton.left
                                         anchors.rightMargin: 6
                                         anchors.verticalCenter: parent.verticalCenter
                                         implicitWidth: 76
@@ -3436,6 +3462,162 @@ ApplicationWindow {
                     implicitWidth: 110
                     text: "Close"
                     onClicked: tabPickerDialog.close()
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: profileHistoryDialog
+        objectName: "profileHistoryDialog"
+        parent: Overlay.overlay
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(620, root.width - 48)
+        height: Math.min(520, root.height - 64)
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 0
+        property string profilePath: ""
+        property string profileLabel: ""
+        property var entries: []
+        background: Rectangle {
+            radius: 18
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            clip: true
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 82
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 20
+                    spacing: 3
+                    Item { Layout.fillHeight: true }
+                    Text {
+                        text: "Earlier versions"
+                        color: root.ink
+                        font.family: interBold.name || root.font.family
+                        font.pixelSize: 20
+                        font.weight: Font.Bold
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: profileHistoryDialog.profileLabel
+                        elide: Text.ElideMiddle
+                        color: root.ink2
+                        font.family: interRegular.name || root.font.family
+                        font.pixelSize: 12
+                    }
+                    Item { Layout.fillHeight: true }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            Item {
+                objectName: "profileHistoryEmptyState"
+                visible: profileHistoryDialog.entries.length === 0
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 120 : 0
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width - 60
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    text: "No earlier versions yet. KeyClick keeps a copy each time you save over this profile."
+                    color: root.ink3
+                    font.family: interRegular.name || root.font.family
+                    font.pixelSize: 12
+                }
+            }
+
+            ListView {
+                objectName: "profileHistoryList"
+                visible: profileHistoryDialog.entries.length > 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: 14
+                Layout.rightMargin: 14
+                Layout.topMargin: 10
+                spacing: 8
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: profileHistoryDialog.entries
+                ScrollBar.vertical: KScrollBar { id: historyScrollBar }
+
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+                    objectName: "profileHistoryRow_" + index
+                    width: ListView.view.width
+                           - (historyScrollBar.visible ? historyScrollBar.width + 8 : 0)
+                    height: 60
+                    radius: 13
+                    color: root.surface
+                    border.width: 1
+                    border.color: root.line
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 10
+                        spacing: 10
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                text: modelData.label
+                                color: root.ink
+                                font.family: interSemiBold.name || root.font.family
+                                font.pixelSize: 12
+                            }
+                            Text {
+                                text: modelData.actionCount < 0
+                                      ? "Unreadable copy"
+                                      : modelData.actionCount === 1
+                                        ? "1 action"
+                                        : modelData.actionCount + " actions"
+                                color: modelData.actionCount < 0 ? root.red : root.ink3
+                                font.family: interRegular.name || root.font.family
+                                font.pixelSize: 11
+                            }
+                        }
+                        KButton {
+                            objectName: "restoreProfileVersion_" + index
+                            implicitWidth: 96
+                            text: "Restore"
+                            leading: "↺"
+                            enabled: modelData.actionCount >= 0
+                            onClicked: {
+                                if (controller.restoreProfileVersion(
+                                        profileHistoryDialog.profilePath, modelData.path))
+                                    profileHistoryDialog.close()
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 66
+                KButton {
+                    objectName: "closeProfileHistoryButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: 110
+                    text: "Close"
+                    onClicked: profileHistoryDialog.close()
                 }
             }
         }

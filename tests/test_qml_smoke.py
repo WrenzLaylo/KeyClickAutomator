@@ -1102,137 +1102,6 @@ def test_start_button_discloses_when_visible_run_settings_will_be_applied():
     controller.shutdown()
 
 
-def test_background_mode_requires_a_selected_target_and_keeps_desktop_available():
-    engine, controller = build_engine(start_hotkeys=False)
-    window = engine.rootObjects()[0]
-    background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
-    desktop_mode = window.findChild(QQuickItem, "desktopTargetModeButton")
-    pick_window = window.findChild(QQuickItem, "pickWindowButton")
-    start = window.findChild(QQuickItem, "runStartButton")
-    assert all(item is not None for item in (background_mode, desktop_mode, pick_window, start))
-    controller.addAction({"kind": "key", "value": "space"})
-    window.setProperty("activeInspectorTab", 1)
-
-    QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
-    QTest.qWait(40)
-    assert controller.targetSettings["mode"] == "window"
-    assert pick_window.isVisible() is True
-    assert start.isEnabled() is False
-
-    desktop_choice = window.findChild(QQuickItem, "desktopWindowChoice")
-    assert desktop_choice is not None
-    QMetaObject.invokeMethod(desktop_choice, "click", Qt.DirectConnection)
-    QTest.qWait(40)
-    assert controller.targetSettings["mode"] == "desktop"
-    assert start.isEnabled() is True
-    window.close()
-    controller.shutdown()
-
-
-def test_window_picker_shows_desktop_and_open_app_choices():
-    service = PickerWindowService()
-    engine, controller = build_engine(start_hotkeys=False, window_service=service)
-    window = engine.rootObjects()[0]
-    window.setWidth(1240)
-    window.setHeight(760)
-    window.setProperty("activeInspectorTab", 1)
-    background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
-    dialog = window.findChild(QObject, "windowPickerDialog")
-    assert background_mode is not None and dialog is not None
-
-    QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
-    QTest.qWait(100)
-
-    desktop = window.findChild(QQuickItem, "desktopWindowChoice")
-    choices = visual_children_named(window.contentItem(), "windowChoice_")
-    assert dialog.property("opened") is True
-    assert desktop is not None
-    assert len(choices) == 2
-    assert [entry["appName"] for entry in controller.windowEntries] == ["Discord", "Google Chrome"]
-
-    second = next(item for item in choices if item.objectName() == "windowChoice_1")
-    QMetaObject.invokeMethod(second, "click", Qt.DirectConnection)
-    QTest.qWait(220)
-    assert controller.targetSettings["displayName"] == "Daily meeting - Google Meet"
-    assert dialog.property("opened") is False
-    window.close()
-    controller.shutdown()
-
-
-def test_window_picker_fast_scroll_is_bounded_to_real_content():
-    service = PickerWindowService()
-    service.windows = [
-        WindowInfo(
-            2000 + index,
-            f"Window {index}",
-            "Chrome_WidgetWin_1",
-            rf"C:\\Apps\\App{index}.exe",
-            100 + index,
-        )
-        for index in range(12)
-    ]
-    engine, controller = build_engine(start_hotkeys=False, window_service=service)
-    window = engine.rootObjects()[0]
-    window.setWidth(900)
-    window.setHeight(640)
-    window.setProperty("activeInspectorTab", 1)
-    background_mode = window.findChild(QQuickItem, "windowTargetModeButton")
-    scroll = window.findChild(QQuickItem, "windowPickerScroll")
-    scrollbar = window.findChild(QQuickItem, "windowPickerScrollBar")
-    scrollbar_thumb = window.findChild(QQuickItem, "windowPickerScrollBar_thumb")
-    close_button = window.findChild(QQuickItem, "windowPickerCloseButton")
-    close_label = window.findChild(QQuickItem, "windowPickerCloseButton_label")
-    dialog = window.findChild(QObject, "windowPickerDialog")
-    assert all(
-        item is not None
-        for item in (
-            background_mode,
-            scroll,
-            scrollbar,
-            scrollbar_thumb,
-            close_button,
-            close_label,
-            dialog,
-        )
-    )
-
-    QMetaObject.invokeMethod(background_mode, "click", Qt.DirectConnection)
-    QTest.qWait(120)
-    maximum_y = scroll.property("contentHeight") - scroll.height()
-    assert dialog.property("opened") is True
-    assert maximum_y > 0
-    assert scrollbar.isVisible() is True
-    close_label_position = close_label.mapToItem(close_button, QPointF(0, 0))
-    assert abs(
-        close_label_position.x() + close_label.width() / 2 - close_button.width() / 2
-    ) <= 0.5
-
-    scroll.setProperty("contentY", maximum_y + 500)
-    QMetaObject.invokeMethod(scroll, "returnToBounds", Qt.DirectConnection)
-    QTest.qWait(600)
-    assert scroll.property("contentY") <= maximum_y + 1
-    background = dialog.property("background")
-    background_position = background.mapToScene(QPointF(0, 0))
-    scrollbar_position = scrollbar.mapToScene(QPointF(0, 0))
-    thumb_position = scrollbar_thumb.mapToScene(QPointF(0, 0))
-    assert (
-        scrollbar_position.y() + scrollbar.height()
-        <= background_position.y() + background.height() - 10
-    )
-    assert (
-        scrollbar_position.x() + scrollbar.width()
-        <= background_position.x() + background.width() - 6
-    )
-    assert (
-        thumb_position.y() + scrollbar_thumb.height()
-        <= background_position.y() + background.height() - 12
-    )
-
-    QMetaObject.invokeMethod(dialog, "close", Qt.DirectConnection)
-    window.close()
-    controller.shutdown()
-
-
 def test_recorded_global_shortcut_routes_to_the_correct_qml_field():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
@@ -1396,5 +1265,51 @@ def test_a_saved_over_profile_can_be_restored_from_the_profiles_page(tmp_path):
     QTest.qWait(300)
 
     assert [action.value for action in controller.actions] == ["a", "b"]
+    window.close()
+    controller.shutdown()
+
+
+def test_the_target_picker_lists_the_desktop_windows_and_tabs_in_one_place():
+    engine, controller = build_engine(start_hotkeys=False)
+    controller._window_service = PickerWindowService()
+    window = engine.rootObjects()[0]
+    window.setWidth(1360)
+    window.setHeight(900)
+    _app.processEvents()
+
+    choose = window.findChild(QQuickItem, "chooseTargetButton")
+    assert choose is not None
+    QMetaObject.invokeMethod(choose, "click", Qt.DirectConnection)
+    QTest.qWait(300)
+
+    dialog = window.findChild(QObject, "targetPickerDialog")
+    assert dialog.property("opened") is True
+    rows = visual_children_named(window.contentItem(), "automationTarget_")
+    assert len(rows) >= 3, "the desktop plus the open windows should be offered"
+
+    # Picking the first row (the desktop) applies both target and mechanism.
+    QMetaObject.invokeMethod(rows[0], "click", Qt.DirectConnection)
+    QTest.qWait(300)
+    assert controller.targetSettings["mode"] == "desktop"
+    assert controller.targetSummary == "This computer"
+    assert dialog.property("opened") is False
+
+    window.close()
+    controller.shutdown()
+
+
+def test_choosing_a_window_from_the_picker_sets_background_delivery():
+    engine, controller = build_engine(start_hotkeys=False)
+    controller._window_service = PickerWindowService()
+    window = engine.rootObjects()[0]
+    controller.refreshAutomationTargets()
+    _app.processEvents()
+    QTest.qWait(200)
+
+    windows = [t for t in controller.automationTargets if t["kind"] == "window"]
+    assert windows, "the fake service exposes open windows"
+    assert controller.selectAutomationTarget("window", windows[0]["id"]) is True
+    assert controller.targetSettings["mode"] == "window"
+
     window.close()
     controller.shutdown()

@@ -186,23 +186,15 @@ ApplicationWindow {
         deleteProfileDialog.open()
     }
 
-    function openTabPicker() {
+    function openTargetPicker() {
         if (controller.running)
             return
-        controller.refreshBrowserTabs()
-        tabPickerDialog.open()
+        controller.refreshAutomationTargets()
+        targetPickerDialog.open()
     }
 
-    function openWindowPicker() {
-        if (controller.running)
-            return
-        if (controller.startWindowPick())
-            windowPickerDialog.open()
-    }
 
-    function closeWindowPicker() {
-        windowPickerDialog.close()
-    }
+
 
     function beginSequenceDrag(index) {
         draggedActionIndex = index
@@ -2644,148 +2636,49 @@ ApplicationWindow {
                             }
 
                             FormLabel { text: "TARGET"; Layout.topMargin: 6 }
-                            Text { text: "Where should actions run?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
-                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Desktop uses your real keyboard and pointer. Background window sends actions only to one selected app."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11; lineHeight: 1.25 }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 7
-                                KButton {
-                                    id: desktopTargetModeButton
-                                    objectName: "desktopTargetModeButton"
-                                    Layout.fillWidth: true
-                                    text: "Desktop"
-                                    leading: "▣"
-                                    activeNeutral: controller.targetSettings.mode === "desktop"
-                                    onClicked: controller.setTargetMode("desktop")
-                                }
-                                KButton {
-                                    id: windowTargetModeButton
-                                    objectName: "windowTargetModeButton"
-                                    Layout.fillWidth: true
-                                    text: "Background"
-                                    leading: "▤"
-                                    activeNeutral: controller.targetSettings.mode === "window"
-                                    onClicked: {
-                                        if (controller.setTargetMode("window"))
-                                            root.openWindowPicker()
-                                    }
-                                }
-                                KButton {
-                                    id: browserTargetModeButton
-                                    objectName: "browserTargetModeButton"
-                                    Layout.fillWidth: true
-                                    text: "Browser tab"
-                                    leading: "◈"
-                                    activeNeutral: controller.targetSettings.mode === "browser"
-                                    onClicked: {
-                                        if (controller.setTargetMode("browser"))
-                                            root.openTabPicker()
-                                    }
-                                }
-                            }
+                            Text { text: "What should it automate?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
                             Text {
-                                visible: controller.targetSettings.mode === "desktop"
                                 Layout.fillWidth: true
                                 wrapMode: Text.WordWrap
-                                text: "Best for universal compatibility. Pointer actions control the physical mouse."
-                                color: root.ink3
+                                text: "Pick the thing you want automated. KeyClick works out how to reach it."
+                                color: root.ink2
                                 font.family: interRegular.name || root.font.family
-                                font.pixelSize: 10
+                                font.pixelSize: 11
+                                lineHeight: 1.25
                             }
+
                             Rectangle {
-                                objectName: "browserTargetPanel"
-                                visible: controller.targetSettings.mode === "browser"
+                                objectName: "chosenTargetPanel"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: visible ? 148 : 0
+                                Layout.preferredHeight: 108
                                 radius: 13
                                 color: root.surface2
                                 border.width: 1
-                                border.color: controller.targetSettings.tabSelected ? "#C9D8F5" : root.line
+                                border.color: root.line
                                 ColumnLayout {
                                     anchors.fill: parent
                                     anchors.margins: 12
                                     spacing: 7
-                                    FormLabel {
-                                        text: controller.targetSettings.tabSelected ? "SELECTED TAB" : "NO TAB SELECTED"
-                                    }
+                                    FormLabel { text: "AUTOMATING" }
                                     Text {
                                         Layout.fillWidth: true
-                                        text: controller.targetSettings.tabName
+                                        objectName: "chosenTargetLabel"
+                                        text: controller.targetSummary
                                         elide: Text.ElideMiddle
-                                        color: controller.targetSettings.tabSelected ? root.ink : root.ink3
+                                        color: root.ink
                                         font.family: interSemiBold.name || root.font.family
-                                        font.pixelSize: 12
+                                        font.pixelSize: 13
                                     }
                                     KButton {
-                                        objectName: "pickBrowserTabButton"
+                                        objectName: "chooseTargetButton"
                                         Layout.fillWidth: true
-                                        text: controller.targetSettings.tabSelected ? "Browse open tabs" : "Choose a tab"
+                                        text: "Change what it automates"
                                         leading: "◈"
-                                        onClicked: root.openTabPicker()
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        wrapMode: Text.WordWrap
-                                        text: "Clicks go to this tab only. Your pointer stays free and other "
-                                            + "Chrome windows and profiles are untouched, even while the tab "
-                                            + "is hidden or its window is minimised."
-                                        color: root.ink3
-                                        font.family: interRegular.name || root.font.family
-                                        font.pixelSize: 10
-                                        lineHeight: 1.2
+                                        onClicked: root.openTargetPicker()
                                     }
                                 }
                             }
-                            Rectangle {
-                                visible: controller.targetSettings.mode === "window"
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: visible ? 116 : 0
-                                radius: 13
-                                color: root.surface2
-                                border.width: 1
-                                border.color: controller.targetSettings.windowSelected ? "#C9D8F5" : root.line
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 12
-                                    spacing: 7
-                                    FormLabel { text: controller.targetSettings.windowSelected ? "SELECTED WINDOW" : "NO WINDOW SELECTED" }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: controller.targetSettings.displayName
-                                        elide: Text.ElideMiddle
-                                        color: controller.targetSettings.windowSelected ? root.ink : root.ink3
-                                        font.family: interSemiBold.name || root.font.family
-                                        font.pixelSize: 12
-                                    }
-                                    KButton {
-                                        objectName: "pickWindowButton"
-                                        Layout.fillWidth: true
-                                        text: controller.targetSettings.windowSelected ? "Browse open windows" : "Choose a window"
-                                        leading: "▦"
-                                        onClicked: root.openWindowPicker()
-                                    }
-                                }
-                            }
-                            Rectangle {
-                                visible: controller.targetSettings.mode === "window"
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: visible ? 82 : 0
-                                radius: 12
-                                color: "#FFF8E8"
-                                border.width: 1
-                                border.color: "#F0D99B"
-                                Text {
-                                    anchors.fill: parent
-                                    anchors.margins: 11
-                                    wrapMode: Text.WordWrap
-                                    text: "Your pointer remains free and the target may stay behind other windows. Use Test once first. If the target becomes unstable or closes, switch to Desktop mode instead of retrying."
-                                    color: "#785A12"
-                                    font.family: interMedium.name || root.font.family
-                                    font.pixelSize: 10
-                                    lineHeight: 1.2
-                                }
-                            }
-                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line; Layout.topMargin: 9; Layout.bottomMargin: 5 }
+
                             FormLabel { text: "RUN PLAN" }
                             Text { text: "Choose when it stops"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
                             Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Run a fixed number of cycles or continue until you press Stop."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11; lineHeight: 1.25 }
@@ -2882,332 +2775,6 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
-        id: windowPickerDialog
-        objectName: "windowPickerDialog"
-        parent: Overlay.overlay
-        modal: true
-        closePolicy: Popup.CloseOnEscape
-        width: Math.min(780, root.width - 48)
-        height: Math.min(610, root.height - 48)
-        x: Math.round((root.width - width) / 2)
-        y: Math.round((root.height - height) / 2)
-        padding: 0
-        onOpened: {
-            windowPickerScroll.contentY = 0
-            windowPickerScroll.forceActiveFocus()
-        }
-        background: Rectangle {
-            radius: 20
-            color: root.surface
-            border.width: 1
-            border.color: root.line
-        }
-        contentItem: ColumnLayout {
-            spacing: 0
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 96
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 22
-                    anchors.rightMargin: 16
-                    spacing: 12
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 5
-                        Text {
-                            text: "Choose where KeyClick runs"
-                            color: root.ink
-                            font.family: interBold.name || root.font.family
-                            font.pixelSize: 20
-                            font.weight: Font.Bold
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Use the desktop, or send actions to one open window while your pointer stays free."
-                            color: root.ink2
-                            elide: Text.ElideRight
-                            font.family: interRegular.name || root.font.family
-                            font.pixelSize: 11
-                        }
-                    }
-                    KButton {
-                        objectName: "windowPickerRefreshButton"
-                        Layout.preferredWidth: 94
-                        text: "Refresh"
-                        leading: "↻"
-                        onClicked: controller.refreshWindowEntries()
-                    }
-                    KButton {
-                        objectName: "windowPickerCloseButton"
-                        Layout.preferredWidth: 76
-                        text: "Close"
-                        activeNeutral: true
-                        Accessible.name: "Close window picker"
-                        onClicked: windowPickerDialog.close()
-                    }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
-
-            Flickable {
-                id: windowPickerScroll
-                objectName: "windowPickerScroll"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.rightMargin: 6
-                Layout.bottomMargin: 10
-                clip: true
-                contentWidth: width
-                contentHeight: windowPickerContent.implicitHeight
-                boundsBehavior: Flickable.StopAtBounds
-                maximumFlickVelocity: 3200
-                flickDeceleration: 2600
-                onContentHeightChanged: Qt.callLater(function() {
-                    windowPickerScroll.returnToBounds()
-                })
-                ScrollBar.vertical: KScrollBar {
-                    id: windowPickerScrollBar
-                    objectName: "windowPickerScrollBar"
-                    topPadding: 8
-                    bottomPadding: 14
-                }
-
-                ColumnLayout {
-                    id: windowPickerContent
-                    width: windowPickerScroll.width
-                           - (windowPickerScrollBar.visible ? windowPickerScrollBar.width + 8 : 0)
-                    spacing: 10
-
-                    FormLabel {
-                        text: "ENTIRE SCREEN"
-                        Layout.leftMargin: 22
-                        Layout.topMargin: 18
-                    }
-
-                    AbstractButton {
-                        id: desktopWindowChoice
-                        objectName: "desktopWindowChoice"
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 112
-                        Layout.leftMargin: 20
-                        Layout.rightMargin: 20
-                        hoverEnabled: true
-                        Accessible.name: "Use the entire desktop"
-                        onClicked: {
-                            controller.setTargetMode("desktop")
-                            root.closeWindowPicker()
-                        }
-                        background: Rectangle {
-                            radius: 15
-                            color: desktopWindowChoice.down ? "#E2ECFF"
-                                 : desktopWindowChoice.hovered ? "#F3F7FF" : root.surface
-                            border.width: controller.targetSettings.mode === "desktop" ? 2 : 1
-                            border.color: controller.targetSettings.mode === "desktop" ? root.primary
-                                        : desktopWindowChoice.hovered ? "#B8CCF5" : root.line
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
-                        }
-                        contentItem: RowLayout {
-                            spacing: 14
-                            Rectangle {
-                                Layout.preferredWidth: 142
-                                Layout.fillHeight: true
-                                Layout.margins: 8
-                                radius: 11
-                                clip: true
-                                color: root.surface2
-                                Image {
-                                    id: desktopPreviewImage
-                                    anchors.fill: parent
-                                    source: controller.desktopPreviewUrl
-                                    visible: status === Image.Ready
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    cache: false
-                                }
-                                Item {
-                                    anchors.centerIn: parent
-                                    visible: desktopPreviewImage.status !== Image.Ready
-                                    width: 46
-                                    height: 38
-                                    Rectangle {
-                                        anchors.top: parent.top
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        width: 42
-                                        height: 27
-                                        radius: 4
-                                        color: "transparent"
-                                        border.width: 2
-                                        border.color: root.primary
-                                    }
-                                    Rectangle { anchors.horizontalCenter: parent.horizontalCenter; y: 28; width: 3; height: 5; radius: 1; color: root.primary }
-                                    Rectangle { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; width: 24; height: 3; radius: 2; color: root.primary }
-                                }
-                            }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 5
-                                Text { text: "Desktop"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 15 }
-                                Text { Layout.fillWidth: true; text: "Controls the real keyboard and pointer across your screens"; color: root.ink2; wrapMode: Text.WordWrap; font.family: interRegular.name || root.font.family; font.pixelSize: 11 }
-                            }
-                            Rectangle {
-                                visible: controller.targetSettings.mode === "desktop"
-                                Layout.preferredWidth: 76
-                                Layout.preferredHeight: 26
-                                Layout.rightMargin: 12
-                                radius: 9
-                                color: root.primarySoft
-                                Text { anchors.centerIn: parent; text: "SELECTED"; color: root.primary; font.family: interSemiBold.name || root.font.family; font.pixelSize: 8; font.letterSpacing: 0.4 }
-                            }
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 22
-                        Layout.rightMargin: 20
-                        Layout.topMargin: 7
-                        FormLabel { Layout.fillWidth: true; text: "OPEN WINDOWS" }
-                        Text {
-                            text: controller.windowEntries.length === 1 ? "1 window" : controller.windowEntries.length + " windows"
-                            color: root.ink3
-                            font.family: interRegular.name || root.font.family
-                            font.pixelSize: 10
-                        }
-                    }
-
-                    GridLayout {
-                        id: windowChoiceGrid
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 20
-                        Layout.rightMargin: 20
-                        columns: windowPickerDialog.width >= 700 ? 3 : 2
-                        columnSpacing: 10
-                        rowSpacing: 10
-
-                        Repeater {
-                            model: controller.windowEntries
-                            delegate: AbstractButton {
-                                id: windowChoice
-                                required property var modelData
-                                required property int index
-                                objectName: "windowChoice_" + index
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 176
-                                enabled: !modelData.minimized
-                                hoverEnabled: true
-                                Accessible.name: "Use " + modelData.appName + ", " + modelData.title
-                                onClicked: controller.selectWindowTarget(modelData.handle)
-                                background: Rectangle {
-                                    radius: 15
-                                    color: windowChoice.down ? "#E2ECFF"
-                                         : windowChoice.hovered ? "#F3F7FF" : root.surface
-                                    border.width: windowChoice.modelData.selected ? 2 : 1
-                                    border.color: windowChoice.modelData.selected ? root.primary
-                                                : windowChoice.hovered ? "#B8CCF5" : root.line
-                                    opacity: windowChoice.enabled ? 1 : 0.58
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                    Behavior on border.color { ColorAnimation { duration: 120 } }
-                                }
-                                contentItem: ColumnLayout {
-                                    spacing: 7
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 104
-                                        Layout.margins: 7
-                                        Layout.bottomMargin: 0
-                                        radius: 10
-                                        clip: true
-                                        color: root.surface2
-                                        Image {
-                                            id: windowPreviewImage
-                                            anchors.fill: parent
-                                            source: windowChoice.modelData.previewUrl
-                                            visible: status === Image.Ready
-                                            fillMode: Image.PreserveAspectCrop
-                                            asynchronous: true
-                                            cache: false
-                                        }
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            visible: windowPreviewImage.status !== Image.Ready
-                                            color: root.primarySoft
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: windowChoice.modelData.appName.length > 0 ? windowChoice.modelData.appName.charAt(0) : "W"
-                                                color: root.primary
-                                                font.family: interBold.name || root.font.family
-                                                font.pixelSize: 28
-                                            }
-                                        }
-                                        Rectangle {
-                                            visible: windowChoice.modelData.selected || windowChoice.modelData.minimized
-                                            anchors.top: parent.top
-                                            anchors.right: parent.right
-                                            anchors.margins: 7
-                                            implicitWidth: windowStateLabel.implicitWidth + 14
-                                            implicitHeight: 22
-                                            radius: 8
-                                            color: windowChoice.modelData.selected ? root.primary : "#DDE3EC"
-                                            Text {
-                                                id: windowStateLabel
-                                                anchors.centerIn: parent
-                                                text: windowChoice.modelData.selected ? "SELECTED" : "RESTORE TO USE"
-                                                color: windowChoice.modelData.selected ? "white" : root.ink2
-                                                font.family: interSemiBold.name || root.font.family
-                                                font.pixelSize: 7
-                                                font.letterSpacing: 0.35
-                                            }
-                                        }
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        Layout.leftMargin: 10
-                                        Layout.rightMargin: 10
-                                        text: windowChoice.modelData.appName
-                                        elide: Text.ElideRight
-                                        color: root.ink
-                                        font.family: interSemiBold.name || root.font.family
-                                        font.pixelSize: 12
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        Layout.leftMargin: 10
-                                        Layout.rightMargin: 10
-                                        Layout.bottomMargin: 8
-                                        text: windowChoice.modelData.title
-                                        elide: Text.ElideRight
-                                        color: root.ink3
-                                        font.family: interRegular.name || root.font.family
-                                        font.pixelSize: 9
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Text {
-                        visible: controller.windowEntries.length === 0
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 28
-                        Layout.rightMargin: 28
-                        Layout.topMargin: 8
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                        text: "No usable app windows are visible. Open or restore the app, then choose Refresh."
-                        color: root.ink3
-                        font.family: interRegular.name || root.font.family
-                        font.pixelSize: 11
-                    }
-                    Item { Layout.fillWidth: true; Layout.preferredHeight: 18 }
-                }
-            }
-        }
-    }
 
     Dialog {
         id: recoveryDialog
@@ -3271,14 +2838,15 @@ ApplicationWindow {
         }
     }
 
+
     Dialog {
-        id: tabPickerDialog
-        objectName: "tabPickerDialog"
+        id: targetPickerDialog
+        objectName: "targetPickerDialog"
         parent: Overlay.overlay
         modal: true
         closePolicy: Popup.CloseOnEscape
-        width: Math.min(700, root.width - 48)
-        height: Math.min(560, root.height - 64)
+        width: Math.min(720, root.width - 48)
+        height: Math.min(600, root.height - 64)
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
         padding: 0
@@ -3294,7 +2862,7 @@ ApplicationWindow {
 
             Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 86
+                Layout.preferredHeight: 88
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 20
@@ -3304,148 +2872,191 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 3
                         Text {
-                            text: "Choose a browser tab"
+                            text: "What should it automate?"
                             color: root.ink
                             font.family: interBold.name || root.font.family
                             font.pixelSize: 20
                             font.weight: Font.Bold
                         }
                         Text {
-                            text: controller.browserReady
-                                  ? controller.browserTabs.length + " tab"
-                                    + (controller.browserTabs.length === 1 ? "" : "s")
-                                    + " available"
-                                  : "KeyClick's automation browser is not running"
+                            text: "Your computer, an open window, or a browser tab"
                             color: root.ink2
                             font.family: interRegular.name || root.font.family
                             font.pixelSize: 12
                         }
                     }
                     KButton {
-                        objectName: "refreshBrowserTabsButton"
+                        objectName: "refreshTargetsButton"
                         text: "Refresh"
                         leading: "↻"
                         implicitWidth: 96
-                        onClicked: controller.refreshBrowserTabs()
+                        onClicked: controller.refreshAutomationTargets()
                     }
                 }
             }
 
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
 
-            Rectangle {
-                objectName: "browserNotRunningNotice"
+            Item {
+                objectName: "startBrowserPrompt"
                 visible: !controller.browserReady
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 150 : 0
-                Layout.margins: visible ? 16 : 0
-                radius: 13
-                color: root.primarySoft
-                border.width: 1
-                border.color: "#B9CEFA"
-                ColumnLayout {
+                Layout.preferredHeight: visible ? 60 : 0
+                Layout.leftMargin: 14
+                Layout.rightMargin: 14
+                Layout.topMargin: visible ? 10 : 0
+                Rectangle {
                     anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 8
-                    Text {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        text: "Browser automation runs in its own Chrome profile, separate from "
-                            + "your everyday windows. Start it here, sign in or open the page you "
-                            + "want, then pick its tab."
-                        color: root.primary
-                        font.family: interMedium.name || root.font.family
-                        font.pixelSize: 11
-                        lineHeight: 1.25
-                    }
-                    KButton {
-                        objectName: "startBrowserButton"
-                        Layout.fillWidth: true
-                        implicitHeight: 44
-                        primary: true
-                        text: "Start automation browser"
-                        leading: "◈"
-                        onClicked: controller.startBrowser()
+                    radius: 13
+                    color: root.primarySoft
+                    border.width: 1
+                    border.color: "#B9CEFA"
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 10
+                        spacing: 10
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: "Browser tabs appear once KeyClick's automation browser is running."
+                            color: root.primary
+                            font.family: interMedium.name || root.font.family
+                            font.pixelSize: 11
+                        }
+                        KButton {
+                            objectName: "startBrowserFromPickerButton"
+                            implicitWidth: 150
+                            primary: true
+                            text: "Start browser"
+                            onClicked: {
+                                controller.startBrowser()
+                                controller.refreshAutomationTargets()
+                            }
+                        }
                     }
                 }
             }
 
             ListView {
-                id: tabPickerList
-                objectName: "browserTabList"
-                visible: controller.browserReady
+                objectName: "automationTargetList"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: 14
                 Layout.rightMargin: 14
-                Layout.topMargin: 8
+                Layout.topMargin: 10
                 spacing: 8
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
-                model: controller.browserTabs
-                ScrollBar.vertical: KScrollBar { id: tabPickerScrollBar; objectName: "browserTabScrollBar" }
+                model: controller.automationTargets
+                ScrollBar.vertical: KScrollBar { id: targetScrollBar; objectName: "targetPickerScrollBar" }
 
                 delegate: AbstractButton {
-                    id: tabRow
+                    id: targetRow
                     required property var modelData
                     required property int index
                     property bool pointerHover: false
-                    objectName: "browserTabChoice_" + index
+                    objectName: "automationTarget_" + index
                     width: ListView.view.width
-                           - (tabPickerScrollBar.visible ? tabPickerScrollBar.width + 8 : 0)
-                    height: 66
+                           - (targetScrollBar.visible ? targetScrollBar.width + 8 : 0)
+                    height: modelData.advice === "" ? 66 : 84
                     leftPadding: 14
                     rightPadding: 14
                     hoverEnabled: true
-                    Accessible.name: "Automate tab " + tabRow.modelData.title
-                    HoverHandler { onHoveredChanged: tabRow.pointerHover = hovered }
+                    Accessible.name: "Automate " + targetRow.modelData.title
+                    HoverHandler { onHoveredChanged: targetRow.pointerHover = hovered }
                     onClicked: {
-                        if (controller.selectBrowserTab(tabRow.modelData.id))
-                            tabPickerDialog.close()
+                        if (controller.selectAutomationTarget(
+                                targetRow.modelData.kind, targetRow.modelData.id))
+                            targetPickerDialog.close()
                     }
                     background: Rectangle {
                         radius: 13
-                        color: tabRow.modelData.current ? root.primarySoft
-                             : tabRow.down ? "#E8EEF8"
-                             : tabRow.pointerHover ? "#F4F7FF"
+                        color: targetRow.modelData.current ? root.primarySoft
+                             : targetRow.down ? "#E8EEF8"
+                             : targetRow.pointerHover ? "#F4F7FF"
                              : root.surface
                         border.width: 1
-                        border.color: tabRow.modelData.current ? "#B9CEFA" : root.line
+                        border.color: targetRow.modelData.current ? "#B9CEFA" : root.line
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
-                    contentItem: ColumnLayout {
-                        spacing: 2
-                        Text {
-                            Layout.fillWidth: true
-                            text: tabRow.modelData.title
-                            elide: Text.ElideRight
-                            color: root.ink
-                            font.family: interSemiBold.name || root.font.family
-                            font.pixelSize: 13
+                    contentItem: RowLayout {
+                        spacing: 11
+                        Rectangle {
+                            visible: targetRow.modelData.previewUrl !== ""
+                            Layout.preferredWidth: visible ? 68 : 0
+                            Layout.preferredHeight: 42
+                            radius: 8
+                            color: root.surface3
+                            border.width: 1
+                            border.color: root.line
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                source: targetRow.modelData.previewUrl
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                smooth: true
+                            }
                         }
-                        Text {
+                        Rectangle {
+                            Layout.preferredWidth: 54
+                            Layout.preferredHeight: 22
+                            radius: 7
+                            color: targetRow.modelData.kind === "browser" ? "#E4F1FF"
+                                 : targetRow.modelData.kind === "window" ? root.surface3
+                                 : root.successSoft
+                            Text {
+                                anchors.centerIn: parent
+                                text: targetRow.modelData.kind === "browser" ? "TAB"
+                                    : targetRow.modelData.kind === "window" ? "WINDOW" : "PC"
+                                color: targetRow.modelData.kind === "browser" ? root.primary
+                                     : targetRow.modelData.kind === "window" ? root.ink2
+                                     : root.green
+                                font.family: interSemiBold.name || root.font.family
+                                font.pixelSize: 8
+                                font.letterSpacing: 0.4
+                            }
+                        }
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text: tabRow.modelData.url
-                            elide: Text.ElideMiddle
-                            color: root.ink3
-                            font.family: interRegular.name || root.font.family
-                            font.pixelSize: 10
+                            spacing: 1
+                            Text {
+                                Layout.fillWidth: true
+                                text: targetRow.modelData.title
+                                elide: Text.ElideRight
+                                color: root.ink
+                                font.family: interSemiBold.name || root.font.family
+                                font.pixelSize: 13
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: targetRow.modelData.subtitle
+                                elide: Text.ElideMiddle
+                                color: root.ink3
+                                font.family: interRegular.name || root.font.family
+                                font.pixelSize: 10
+                            }
+                            Text {
+                                visible: targetRow.modelData.minimized === true
+                                Layout.fillWidth: true
+                                text: "Minimised \u00b7 restore it before running"
+                                color: root.ink3
+                                font.family: interRegular.name || root.font.family
+                                font.pixelSize: 10
+                            }
+                            Text {
+                                visible: targetRow.modelData.advice !== ""
+                                Layout.fillWidth: true
+                                text: targetRow.modelData.advice
+                                wrapMode: Text.WordWrap
+                                color: "#B26A00"
+                                font.family: interMedium.name || root.font.family
+                                font.pixelSize: 10
+                            }
                         }
                     }
-                }
-            }
-
-            Item {
-                objectName: "browserTabEmptyState"
-                visible: controller.browserReady && controller.browserTabs.length === 0
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 90 : 0
-                Text {
-                    anchors.centerIn: parent
-                    text: "No tabs open. Open a page in the automation browser, then Refresh."
-                    color: root.ink3
-                    font.family: interRegular.name || root.font.family
-                    font.pixelSize: 12
                 }
             }
 
@@ -3455,13 +3066,13 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 66
                 KButton {
-                    objectName: "closeTabPickerButton"
+                    objectName: "closeTargetPickerButton"
                     anchors.right: parent.right
                     anchors.rightMargin: 16
                     anchors.verticalCenter: parent.verticalCenter
                     implicitWidth: 110
                     text: "Close"
-                    onClicked: tabPickerDialog.close()
+                    onClicked: targetPickerDialog.close()
                 }
             }
         }
@@ -3879,10 +3490,8 @@ ApplicationWindow {
             stopHotkey.text = controller.runSettings.stopHotkey
         }
         function onTargetSettingsChanged() {
-            if (windowPickerDialog.opened && controller.targetSettings.windowSelected)
-                root.closeWindowPicker()
             if (root.editorIndex < 0) {
-                editor.coordinateSpace = controller.targetSettings.mode === "window" ? "window" : "screen"
+                editor.coordinateSpace = editor.expectedSpace
                 editor.referenceWidth = 0
                 editor.referenceHeight = 0
                 editor.referenceWidth2 = 0

@@ -1626,3 +1626,78 @@ def test_saved_versions_never_appear_in_the_profile_library(tmp_path):
 
     assert [entry["name"] for entry in controller.profileEntries] == ["Mine"]
     controller.shutdown()
+
+
+class BrowserWindowService(FakeWindowService):
+    """A desktop with one ordinary app and one browser window open."""
+
+    def list_windows(self, excluded_process_id=0):
+        return [
+            WindowInfo(101, "Untitled - Notepad", "Notepad", r"C:\W\notepad.exe", 11),
+            WindowInfo(202, "Cookie Clicker - Google Chrome", "Chrome_WidgetWin_1",
+                       r"C:\Chrome\chrome.exe", 22),
+        ]
+
+    def resolve_window(self, selector, preferred_hwnd=0):
+        for info in self.list_windows():
+            if info.title == selector.title:
+                return info
+        raise qt_controller.WindowTargetError("The target window is not open.")
+
+
+def test_one_list_offers_the_desktop_windows_and_tabs_together(monkeypatch):
+    _fake_browser(monkeypatch, [FakeTab("T1", "Cookie Clicker", "https://example.com/cookie")])
+    controller = AutomatorController(start_hotkeys=False, window_service=BrowserWindowService())
+
+    controller.refreshAutomationTargets()
+    targets = controller.automationTargets
+
+    assert targets[0]["kind"] == "desktop"
+    kinds = {t["kind"] for t in targets}
+    assert kinds == {"desktop", "browser", "window"}
+    assert any(t["title"] == "Cookie Clicker" and t["kind"] == "browser" for t in targets)
+    controller.shutdown()
+
+
+def test_a_browser_window_is_listed_but_tells_you_to_use_its_tab(monkeypatch):
+    """The pairing that ran perfectly and delivered nothing all session."""
+    _fake_browser(monkeypatch, [])
+    controller = AutomatorController(start_hotkeys=False, window_service=BrowserWindowService())
+    controller.refreshAutomationTargets()
+
+    chrome = next(t for t in controller.automationTargets
+                  if t["kind"] == "window" and "Chrome" in t["title"])
+    notepad = next(t for t in controller.automationTargets
+                   if t["kind"] == "window" and "Notepad" in t["title"])
+
+    assert "tab instead" in chrome["advice"]
+    assert notepad["advice"] == ""
+    controller.shutdown()
+
+
+def test_choosing_a_target_also_chooses_how_to_reach_it(monkeypatch):
+    _fake_browser(monkeypatch, [FakeTab("T1", "Cookie Clicker", "https://example.com/cookie")])
+    controller = AutomatorController(start_hotkeys=False, window_service=BrowserWindowService())
+    controller.refreshAutomationTargets()
+
+    # A tab implies browser delivery; the user never picks a mechanism.
+    assert controller.selectAutomationTarget("browser", "T1") is True
+    assert controller.targetSettings["mode"] == "browser"
+    assert controller.targetSummary == "Cookie Clicker"
+
+    assert controller.selectAutomationTarget("window", "101") is True
+    assert controller.targetSettings["mode"] == "window"
+
+    assert controller.selectAutomationTarget("desktop", "desktop") is True
+    assert controller.targetSettings["mode"] == "desktop"
+    assert controller.targetSummary == "This computer"
+    controller.shutdown()
+
+
+def test_the_target_cannot_be_changed_mid_run(monkeypatch):
+    _fake_browser(monkeypatch, [])
+    controller = AutomatorController(start_hotkeys=False, window_service=BrowserWindowService())
+    controller._set_running(True)
+
+    assert controller.selectAutomationTarget("desktop", "desktop") is False
+    controller.shutdown()

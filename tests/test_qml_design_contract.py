@@ -221,34 +221,27 @@ def test_scrollbars_only_render_for_overflow_and_lists_reserve_a_gutter():
     assert 'objectName: "sequenceScrollBar"' in QML
     assert "sequenceScrollBar.visible ? sequenceScrollBar.width + 8 : 0" in QML
     assert "profileScrollBar.visible ? profileScrollBar.width + 8 : 0" in QML
-    assert 'objectName: "windowPickerScrollBar"' in QML
-    assert "topPadding: 8" in QML
-    assert "bottomPadding: 14" in QML
+    assert 'objectName: "targetPickerScrollBar"' in QML
+    # Every scrolling list reserves the same gutter so rows never sit under the thumb.
+    assert "targetScrollBar.visible ? targetScrollBar.width + 8 : 0" in QML
+    assert "historyScrollBar.visible ? historyScrollBar.width + 8 : 0" in QML
     assert 'objectName: control.objectName + "_thumb"' in APP_SCROLLBAR
 
 
-def test_window_picker_uses_a_bounded_overlay_flick_area():
-    assert "parent: Overlay.overlay" in QML
-    assert "id: windowPickerScroll" in QML
+def test_the_target_picker_is_a_bounded_list_inside_its_dialog():
+    assert 'objectName: "targetPickerDialog"' in QML
+    assert 'objectName: "automationTargetList"' in QML
     assert "boundsBehavior: Flickable.StopAtBounds" in QML
-    assert "windowPickerScroll.returnToBounds()" in QML
-    assert "Layout.rightMargin: 6" in QML
-    assert "Layout.bottomMargin: 10" in QML
 
 
-def test_background_window_targeting_discloses_picker_and_compatibility_limits():
-    assert 'objectName: "desktopTargetModeButton"' in QML
-    assert 'objectName: "windowTargetModeButton"' in QML
-    assert 'objectName: "pickWindowButton"' in QML
-    assert 'objectName: "windowPickerDialog"' in QML
-    assert 'objectName: "desktopWindowChoice"' in QML
-    assert 'objectName: "windowChoice_" + index' in QML
-    assert 'controller.setTargetMode("window")' in QML
-    assert "controller.startWindowPick()" in QML
-    assert "controller.selectWindowTarget(modelData.handle)" in QML
-    assert "Your pointer remains free" in QML
-    assert 'coordinateSpace: followingPointer ? "screen" : coordinateSpace' in QML
-    assert "referenceWidth: followingPointer ? 0 : referenceWidth" in QML
-    assert "referenceHeight: followingPointer ? 0 : referenceHeight" in QML
-    assert "referenceWidth2: followingPointer ? 0 : referenceWidth2" in QML
-    assert "referenceHeight2: followingPointer ? 0 : referenceHeight2" in QML
+def test_one_picker_offers_every_target_and_chooses_how_to_reach_it():
+    """Choosing a thing, not a mechanism, makes the bad pairing unreachable."""
+    assert 'objectName: "chooseTargetButton"' in QML
+    assert 'objectName: "targetPickerDialog"' in QML
+    assert 'objectName: "automationTarget_" + index' in QML
+    assert "controller.selectAutomationTarget(" in QML
+    assert "controller.automationTargets" in QML
+    # A browser window is still listed, but says why its tab is the right choice.
+    assert "targetRow.modelData.advice" in QML
+
+

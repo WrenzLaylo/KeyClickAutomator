@@ -25,3 +25,10 @@ def test_release_version_and_readme_stay_in_sync():
     assert f"KeyClickAutomator-Setup-{version}.exe" in README
     assert f"## What's new in {version}" in README
     assert f"| {version} |" in README
+
+
+def test_packaged_builds_include_the_browser_control_dependency():
+    """websocket-client is imported lazily, so PyInstaller cannot infer it."""
+    for name in ("KeyClickAutomator.spec", "KeyClickAutomatorInstaller.spec"):
+        spec = (ROOT / name).read_text(encoding="utf-8")
+        assert "'websocket'" in spec, f"{name} would ship without browser control"

@@ -57,7 +57,7 @@ from chrome_backend import (
     list_tabs,
     wait_for_browser,
 )
-from preflight import Check, blocking_failures, preflight
+from preflight import Check, blocking_failures, looks_like_a_browser, preflight
 from profile_history import restore as restore_version, snapshot, versions
 from run_session import RunSession
 from shortcut_service import global_shortcut_conflicts, pynput_hotkey
@@ -227,6 +227,7 @@ class AutomatorController(QObject):
     windowEntriesChanged = Signal()
     browserTabsChanged = Signal()
     preflightChanged = Signal()
+    targetsChanged = Signal()
     browserPointCaptured = Signal(int, int, int, int, int)
     runningActionIndexChanged = Signal()
     runQueueChanged = Signal()
@@ -316,6 +317,12 @@ class AutomatorController(QObject):
         self._draft_summary = self._describe_draft() if self._draft_available else ""
         self._hotkeys_enabled = start_hotkeys
         # The checklist is only useful if it tracks what the user just changed.
+        for signal in (
+            self.windowEntriesChanged,
+            self.browserTabsChanged,
+        ):
+            signal.connect(self.targetsChanged)
+        self.targetsChanged.connect(self.preflightChanged)
         for signal in (
             self.actionsChanged,
             self.targetSettingsChanged,
@@ -649,6 +656,114 @@ class AutomatorController(QObject):
         self._set_status("Ready", "neutral")
         self.positionCaptured.emit(target, x, y, "viewport", width, height)
         self.toast.emit(f"Recorded {x}, {y} in the tab", "success")
+
+    # -- one list of everything you could automate ------------------------------
+
+    @Property("QVariantList", notify=targetsChanged)
+    def automationTargets(self) -> list[dict[str, Any]]:
+        """Windows and browser tabs together, so the user picks a thing, not a mechanism.
+
+        Pairing a target with the wrong delivery mechanism was the failure that
+        cost a whole session: a browser window chosen in background-window mode
+        runs perfectly and delivers nothing. Choosing the mechanism here makes
+        that combination unreachable rather than merely detected.
+        """
+        settings = self._run_settings
+        entries: list[dict[str, Any]] = [
+            {
+                "kind": "desktop",
+                "id": "desktop",
+                "previewUrl": self._desktop_preview_url,
+                "minimized": False,
+                "title": "This computer",
+                "subtitle": "Uses your real mouse and keyboard",
+                "current": settings.target_mode == "desktop",
+                "advice": "",
+            }
+        ]
+
+        for tab in self._browser_tabs:
+            entries.append(
+                {
+                    "kind": "browser",
+                    "id": tab["id"],
+                    "previewUrl": "",
+                    "minimized": False,
+                    "title": tab["title"] or tab["url"],
+                    "subtitle": tab["url"],
+                    "current": settings.target_mode == "browser"
+                    and tab["url"] == settings.target_tab_url,
+                    "advice": "",
+                }
+            )
+
+        for entry in self._window_entries:
+            info = self._window_candidates.get(int(entry.get("handle", 0) or 0))
+            executable = getattr(info, "executable", "")
+            is_browser = looks_like_a_browser(
+                entry.get("title", ""), getattr(info, "class_name", ""), executable
+            )
+            entries.append(
+                {
+                    "kind": "window",
+                    "id": str(entry.get("handle", "")),
+                    "title": entry.get("title", "") or entry.get("appName", ""),
+                    "subtitle": entry.get("appName", "") or "Open window",
+                    # Carried through so the picker can still show you the window
+                    # rather than only naming it.
+                    "previewUrl": entry.get("previewUrl", ""),
+                    "minimized": entry.get("minimized", False),
+                    "current": settings.target_mode == "window"
+                    and entry.get("selected", False),
+                    # Offered, but never silently: a browser window cannot receive
+                    # background messages at all.
+                    "advice": "Pick this app's tab instead — page clicks never reach a browser window"
+                    if is_browser
+                    else "",
+                }
+            )
+        return entries
+
+    @Slot(result=bool)
+    def refreshAutomationTargets(self) -> bool:
+        self.refreshWindowEntries()
+        self.refreshBrowserTabs()
+        self.targetsChanged.emit()
+        return True
+
+    @Slot(str, str, result=bool)
+    def selectAutomationTarget(self, kind: str, identifier: str) -> bool:
+        """Choose what to automate; KeyClick decides how to reach it."""
+        if self._running or self._queue_active:
+            self.toast.emit("Stop the current run before changing its target.", "error")
+            return False
+        kind = str(kind).strip().lower()
+        if kind == "desktop":
+            self.setTargetMode("desktop")
+            self.targetsChanged.emit()
+            return True
+        if kind == "browser":
+            if not self.setTargetMode("browser"):
+                return False
+            chosen = self.selectBrowserTab(identifier)
+            self.targetsChanged.emit()
+            return chosen
+        if kind == "window":
+            if not self.setTargetMode("window"):
+                return False
+            chosen = self.selectWindowTarget(identifier)
+            self.targetsChanged.emit()
+            return chosen
+        return False
+
+    @Property(str, notify=targetsChanged)
+    def targetSummary(self) -> str:
+        settings = self._run_settings
+        if settings.target_mode == "desktop":
+            return "This computer"
+        if settings.target_mode == "browser":
+            return settings.target_tab_title or settings.target_tab_url or "No tab chosen"
+        return self.targetSettings["displayName"]
 
     def _browser_profile_root(self) -> Path:
         return Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))

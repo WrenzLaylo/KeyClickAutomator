@@ -47,6 +47,17 @@ from recovery_store import (
     remove_recovery_draft,
     write_recovery_draft,
 )
+from chrome_backend import (
+    ChromeTabBackend,
+    ChromeTargetError,
+    DEFAULT_PORT as BROWSER_PORT,
+    browser_available,
+    find_tab,
+    launch_chrome,
+    list_tabs,
+    wait_for_browser,
+)
+from preflight import Check, blocking_failures, preflight
 from run_session import RunSession
 from shortcut_service import global_shortcut_conflicts, pynput_hotkey
 from window_backend import (
@@ -213,6 +224,9 @@ class AutomatorController(QObject):
     targetSettingsChanged = Signal()
     windowPickStateChanged = Signal()
     windowEntriesChanged = Signal()
+    browserTabsChanged = Signal()
+    preflightChanged = Signal()
+    browserPointCaptured = Signal(int, int, int, int, int)
     runningActionIndexChanged = Signal()
     runQueueChanged = Signal()
     runQueueRunningChanged = Signal()
@@ -251,6 +265,17 @@ class AutomatorController(QObject):
         self._queue_mode = "sequential"
         self._queue_active = False
         self._queue_stop_requested = False
+        # A zero-delay run reports progress ~44 times a second per profile. Emitting a
+        # full model reset for each one rebuilds every queue card on the UI thread and
+        # makes the window stutter, so repaints are coalesced onto this timer.
+        self._browser_tabs: list[dict[str, Any]] = []
+        self._browser_capture_thread: threading.Thread | None = None
+        self._browser_ready = False
+        self._queue_ui_dirty = False
+        self._queue_ui_timer = QTimer(self)
+        self._queue_ui_timer.setSingleShot(True)
+        self._queue_ui_timer.setInterval(70)
+        self._queue_ui_timer.timeout.connect(self._flush_queue_ui)
         self._listener: keyboard.GlobalHotKeys | None = None
         self._capture_listener: keyboard.Listener | None = None
         self._action_capture_mode = ""
@@ -289,8 +314,17 @@ class AutomatorController(QObject):
         self._draft_available = self._recovery_enabled and self._recovery_path.is_file()
         self._draft_summary = self._describe_draft() if self._draft_available else ""
         self._hotkeys_enabled = start_hotkeys
+        # The checklist is only useful if it tracks what the user just changed.
+        for signal in (
+            self.actionsChanged,
+            self.targetSettingsChanged,
+            self.runSettingsChanged,
+            self.browserTabsChanged,
+        ):
+            signal.connect(self.preflightChanged)
         self.progressFromWorker.connect(self._handle_progress)
         self.finishedFromWorker.connect(self._finish_run)
+        self.browserPointCaptured.connect(self._finish_browser_point_capture)
         self.hotkeyToggleRequested.connect(self._toggle_run)
         self.hotkeyCaptureRequested.connect(lambda: self.startPositionCapture(0))
         self.hotkeyStopRequested.connect(self.stopRun)
@@ -476,7 +510,168 @@ class AutomatorController(QObject):
             "displayName": settings.target_window_title
             or (Path(settings.target_executable).stem if settings.target_executable else settings.target_window_class)
             or "No window selected",
+            "tabSelected": bool(settings.target_tab_url.strip()),
+            "tabUrl": settings.target_tab_url,
+            "tabTitle": settings.target_tab_title,
+            "tabName": settings.target_tab_title or settings.target_tab_url or "No tab selected",
+            "browserPort": settings.browser_port,
         }
+
+    # -- browser tab targeting -------------------------------------------------
+
+    @Property("QVariantList", notify=browserTabsChanged)
+    def browserTabs(self) -> list[dict[str, Any]]:
+        return self._browser_tabs
+
+    @Property(bool, notify=browserTabsChanged)
+    def browserReady(self) -> bool:
+        return self._browser_ready
+
+    @Slot(result=bool)
+    def refreshBrowserTabs(self) -> bool:
+        """List the tabs the debuggable browser is exposing right now."""
+        port = self._run_settings.browser_port
+        self._browser_ready = browser_available(port)
+        if not self._browser_ready:
+            self._browser_tabs = []
+            self.browserTabsChanged.emit()
+            return False
+        try:
+            tabs = list_tabs(port)
+        except ChromeTargetError as exc:
+            self._browser_tabs = []
+            self.browserTabsChanged.emit()
+            self.toast.emit(str(exc), "error")
+            return False
+        current = self._run_settings.target_tab_url
+        self._browser_tabs = [
+            {
+                "id": tab.target_id,
+                "title": tab.title or tab.url,
+                "url": tab.url,
+                "current": bool(current) and tab.url == current,
+            }
+            for tab in tabs
+        ]
+        self.browserTabsChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    def startBrowser(self) -> bool:
+        """Launch a debuggable browser in KeyClick's own persistent profile."""
+        port = self._run_settings.browser_port
+        if browser_available(port):
+            self.refreshBrowserTabs()
+            return True
+        chrome = self._chrome_executable()
+        if not chrome:
+            self.toast.emit(
+                "Could not find Google Chrome. Install it, or open a browser with "
+                f"--remote-debugging-port={port} yourself.",
+                "error",
+            )
+            return False
+        try:
+            launch_chrome(chrome, self._browser_profile_root(), port=port)
+        except OSError as exc:
+            self.toast.emit(f"Could not start the browser: {exc}", "error")
+            return False
+        if not wait_for_browser(port, timeout=30.0):
+            self.toast.emit("The browser did not open its debug port in time.", "error")
+            return False
+        self.refreshBrowserTabs()
+        self.toast.emit("Browser ready for automation", "success")
+        return True
+
+    @Slot(str, result=bool)
+    def selectBrowserTab(self, target_id: str) -> bool:
+        if self._running:
+            self.toast.emit("Stop the current run before changing its target.", "error")
+            return False
+        if not self._browser_tabs:
+            # Selecting without having listed first is legitimate: refresh once
+            # rather than failing on an empty cache.
+            self.refreshBrowserTabs()
+        chosen = next(
+            (tab for tab in self._browser_tabs if tab["id"] == str(target_id)), None
+        )
+        if chosen is None:
+            self.toast.emit("That tab is no longer open. Refresh the list.", "error")
+            self.refreshBrowserTabs()
+            return False
+        self._run_settings.target_tab_url = chosen["url"]
+        self._run_settings.target_tab_title = chosen["title"]
+        self._set_dirty(True)
+        self.targetSettingsChanged.emit()
+        self.refreshBrowserTabs()
+        self.toast.emit(f"Targeting {chosen['title'][:48]}", "success")
+        return True
+
+    def _start_browser_point_capture(self, target: int) -> bool:
+        """Record a viewport point by asking the page which pixel was clicked."""
+        try:
+            tab = self._resolve_browser_tab(self._run_settings)
+        except WindowTargetError as exc:
+            self.toast.emit(str(exc), "error")
+            return False
+        try:
+            backend = ChromeTabBackend(tab)
+        except ChromeTargetError as exc:
+            self.toast.emit(str(exc), "error")
+            return False
+
+        self._set_status("Pick a point", "accent")
+        self.toast.emit("Click the spot in the browser tab", "neutral")
+
+        def worker() -> None:
+            picked = None
+            try:
+                picked = backend.capture_click_point(timeout=45.0)
+            except ChromeTargetError:
+                picked = None
+            finally:
+                backend.close()
+            self.browserPointCaptured.emit(target, *(picked or (-1, -1, 0, 0)))
+
+        self._browser_capture_thread = threading.Thread(target=worker, daemon=True)
+        self._browser_capture_thread.start()
+        return True
+
+    @Slot(int, int, int, int, int)
+    def _finish_browser_point_capture(
+        self, target: int, x: int, y: int, width: int, height: int
+    ) -> None:
+        if x < 0 or y < 0:
+            self._set_status("Ready", "neutral")
+            self.toast.emit("Nothing was picked in the browser tab.", "neutral")
+            return
+        self._set_status("Ready", "neutral")
+        self.positionCaptured.emit(target, x, y, "viewport", width, height)
+        self.toast.emit(f"Recorded {x}, {y} in the tab", "success")
+
+    def _browser_profile_root(self) -> Path:
+        return Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))
+
+    @staticmethod
+    def _chrome_executable() -> str:
+        for candidate in (
+            os.environ.get("KEYCLICK_CHROME", ""),
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ):
+            if candidate and Path(candidate).is_file():
+                return candidate
+        return ""
+
+    def _resolve_browser_tab(self, settings: RunSettings):
+        try:
+            return find_tab(
+                port=settings.browser_port,
+                url=settings.target_tab_url,
+                title=settings.target_tab_title,
+            )
+        except ChromeTargetError as exc:
+            raise WindowTargetError(str(exc)) from exc
 
     def _get_window_service(self):
         if self._window_service is None:
@@ -633,7 +828,7 @@ class AutomatorController(QObject):
     @Slot(str, result=bool)
     def setTargetMode(self, mode: str) -> bool:
         normalized = str(mode).strip().lower()
-        if normalized not in {"desktop", "window"}:
+        if normalized not in {"desktop", "window", "browser"}:
             return False
         if self._running:
             self.toast.emit("Stop the current run before changing its target.", "error")
@@ -994,6 +1189,11 @@ class AutomatorController(QObject):
                 target_window_title=current.target_window_title,
                 target_window_class=current.target_window_class,
                 target_executable=current.target_executable,
+                # Carried over for the same reason as the window fields: this form
+                # edits timing and shortcuts, never the chosen target.
+                target_tab_url=current.target_tab_url,
+                target_tab_title=current.target_tab_title,
+                browser_port=current.browser_port,
             )
             settings.validate()
         except (ValueError, TypeError) as exc:
@@ -1165,7 +1365,10 @@ class AutomatorController(QObject):
         remember_target: bool = False,
     ) -> int:
         mouse_kinds = {"left_click", "right_click", "double_click", "middle_click", "scroll", "drag"}
-        expected_space = "window" if settings.target_mode == "window" else "screen"
+        expected_space = {
+            "window": "window",
+            "browser": "viewport",
+        }.get(settings.target_mode, "screen")
         for sequence_index, action in enumerate(actions):
             if action.kind not in mouse_kinds or action.coordinate_space == expected_space:
                 continue
@@ -1174,12 +1377,19 @@ class AutomatorController(QObject):
                 # position that could belong to the wrong target.
                 continue
             source_index = action_indices[sequence_index] if sequence_index < len(action_indices) else sequence_index
-            destination = "the selected window" if expected_space == "window" else "the desktop"
+            destination = {
+                "window": "the selected window",
+                "viewport": "the selected browser tab",
+            }.get(expected_space, "the desktop")
             raise ValueError(
                 f"Step {source_index + 1} was recorded for a different target. "
                 f"Open it and record its position again for {destination}."
             )
         if settings.target_mode == "desktop":
+            return 0
+        if settings.target_mode == "browser":
+            # Fail here rather than inside the worker, so the queue can report it.
+            self._resolve_browser_tab(settings)
             return 0
         if not self._window_selector(settings).selected:
             raise WindowTargetError("Choose a target window in Run settings before starting background mode.")
@@ -1207,6 +1417,14 @@ class AutomatorController(QObject):
             )
         for action in actions:
             action.validate(reserved_shortcuts)
+        # Refuse combinations that run perfectly and deliver nothing -- an
+        # unrecorded click, or window messages aimed at a browser.
+        for failure in blocking_failures(self.runPreflight(actions, settings)):
+            raise ValueError(
+                f"{failure.detail} {failure.remedy}".strip()
+                if failure.remedy
+                else failure.detail
+            )
         return self._prepare_run_target(
             actions,
             action_indices,
@@ -1214,6 +1432,48 @@ class AutomatorController(QObject):
             preferred_hwnd=preferred_hwnd,
             remember_target=remember_target,
         )
+
+    def runPreflight(
+        self, actions: list[Action] | None = None, settings: RunSettings | None = None
+    ) -> list[Check]:
+        chosen = settings or self._run_settings
+        sequence = actions if actions is not None else [a for a in self.actions if a.enabled]
+
+        def resolve_window():
+            return self._resolve_target_info(chosen, remember=False)
+
+        def resolve_tab():
+            return self._resolve_browser_tab(chosen)
+
+        return preflight(
+            sequence,
+            chosen,
+            resolve_window=resolve_window if chosen.target_mode == "window" else None,
+            resolve_tab=resolve_tab if chosen.target_mode == "browser" else None,
+        )
+
+    @Property("QVariantList", notify=preflightChanged)
+    def preflightChecks(self) -> list[dict[str, str]]:
+        try:
+            return [check.as_entry() for check in self.runPreflight()]
+        except Exception as exc:  # a probe must never break the UI
+            return [{"name": "Target", "status": "fail", "detail": str(exc), "remedy": ""}]
+
+    @Property(bool, notify=preflightChanged)
+    def preflightBlocked(self) -> bool:
+        return any(check.get("status") == "fail" for check in self.preflightChecks)
+
+    @Property(str, notify=preflightChanged)
+    def preflightSummary(self) -> str:
+        for check in self.preflightChecks:
+            if check.get("status") == "fail":
+                return check.get("detail", "This sequence cannot run yet.")
+        return ""
+
+    @Slot(result=bool)
+    def refreshPreflight(self) -> bool:
+        self.preflightChanged.emit()
+        return True
 
     def _queue_reserved_shortcuts(self) -> set[str]:
         return self._reserved_shortcuts() | {"f9"}
@@ -1225,6 +1485,20 @@ class AutomatorController(QObject):
         if self._active_session is not None and self._active_session.session_id == session_id:
             return self._active_session
         return self._parallel_sessions.get(session_id)
+
+    def _mark_queue_ui_dirty(self) -> None:
+        """Request a queue repaint from the run hot path, at most ~14 times a second."""
+        self._queue_ui_dirty = True
+        if not self._queue_ui_timer.isActive():
+            self._queue_ui_timer.start()
+
+    def _flush_queue_ui(self) -> None:
+        if not self._queue_ui_dirty:
+            return
+        self._queue_ui_dirty = False
+        self.runQueueChanged.emit()
+        if self._parallel_sessions:
+            self._update_parallel_status()
 
     def _is_parallel_session(self, session: RunSession) -> bool:
         """Report how this session actually runs, not which mode is selected.
@@ -1350,7 +1624,7 @@ class AutomatorController(QObject):
 
         problem: tuple[RunSession, str] | None = None
         reserved_shortcuts = self._queue_reserved_shortcuts()
-        resolved_targets: dict[int, list[RunSession]] = {}
+        resolved_targets: dict[tuple[str, Any], list[RunSession]] = {}
         for index, session in enumerate(self._run_queue):
             try:
                 self._load_profile_session(session.profile_path, existing=session)
@@ -1360,11 +1634,15 @@ class AutomatorController(QObject):
                     and index < len(self._run_queue) - 1
                 ):
                     raise ValueError(
-                        "A profile that loops indefinitely must be last in the queue."
+                        "This profile repeats forever, so nothing below it would "
+                        "ever start. Move it to the end of the queue, turn off "
+                        "Repeat forever, or switch to Parallel to run these "
+                        "profiles at the same time."
                     )
-                if self._queue_mode == "parallel" and session.settings.target_mode != "window":
+                if self._queue_mode == "parallel" and session.settings.target_mode == "desktop":
                     raise ValueError(
-                        "Parallel mode supports background-window profiles only."
+                        "Parallel mode supports background-window and browser-tab "
+                        "profiles only, because Desktop profiles share one pointer."
                     )
                 session.target_hwnd = self._validate_run_payload(
                     session.actions,
@@ -1374,8 +1652,13 @@ class AutomatorController(QObject):
                 )
                 session.reserved_shortcuts = set(reserved_shortcuts)
                 if self._queue_mode == "parallel":
-                    self._get_window_service().ensure_responsive(session.target_hwnd)
-                    resolved_targets.setdefault(session.target_hwnd, []).append(session)
+                    if session.settings.target_mode == "browser":
+                        # Two profiles driving one tab would interleave their clicks.
+                        key = ("tab", session.settings.target_tab_url)
+                    else:
+                        self._get_window_service().ensure_responsive(session.target_hwnd)
+                        key = ("window", session.target_hwnd)
+                    resolved_targets.setdefault(key, []).append(session)
             except (OSError, ValueError, TypeError, WindowTargetError) as exc:
                 session.state = "error"
                 session.status = "Needs attention"
@@ -1388,9 +1671,10 @@ class AutomatorController(QObject):
                 if len(sessions) < 2:
                     continue
                 names = " and ".join(session.profile_name for session in sessions[:2])
+                noun = "browser tab" if sessions[0].settings.target_mode == "browser" else "target window"
                 message = (
-                    f"{names} resolve to the same target window. "
-                    "Choose a different window for one profile."
+                    f"{names} resolve to the same {noun}. "
+                    f"Choose a different {noun} for one profile."
                 )
                 for session in sessions:
                     session.state = "error"
@@ -1564,12 +1848,15 @@ class AutomatorController(QObject):
         return self._start_session(session)
 
     def _run_worker(self, session: RunSession) -> None:
+        browser_backend: ChromeTabBackend | None = None
         try:
-            backend = (
-                WindowMessageBackend(session.target_hwnd, self._get_window_service())
-                if session.settings.target_mode == "window"
-                else pyautogui
-            )
+            if session.settings.target_mode == "browser":
+                browser_backend = ChromeTabBackend(self._resolve_browser_tab(session.settings))
+                backend = browser_backend
+            elif session.settings.target_mode == "window":
+                backend = WindowMessageBackend(session.target_hwnd, self._get_window_service())
+            else:
+                backend = pyautogui
             complete = AutomationRunner(backend).run(
                 session.actions,
                 session.settings,
@@ -1600,6 +1887,10 @@ class AutomatorController(QObject):
                 False,
                 f"Automation error: {exc}",
             )
+        finally:
+            # The debugger socket is per-run; leaving it open pins the tab.
+            if browser_backend is not None:
+                browser_backend.close()
 
     @Slot()
     def stopRun(self) -> None:
@@ -1698,14 +1989,14 @@ class AutomatorController(QObject):
             session.status = "Stopping"
             session.tone = "danger"
             if self._session_is_queued(session):
-                self.runQueueChanged.emit()
+                self._mark_queue_ui_dirty()
             return
         if session.pause_event.is_set():
             session.state = "paused"
             session.status = "Paused"
             session.tone = "accent"
             if self._session_is_queued(session):
-                self.runQueueChanged.emit()
+                self._mark_queue_ui_dirty()
             if parallel_session:
                 self._update_parallel_status()
             return
@@ -1756,8 +2047,8 @@ class AutomatorController(QObject):
                 self._set_status(status, "success")
                 self._set_progress(session.progress)
         if self._session_is_queued(session):
-            self.runQueueChanged.emit()
-        if parallel_session:
+            self._mark_queue_ui_dirty()
+        elif parallel_session:
             self._update_parallel_status()
 
     @Slot(str, bool, str)
@@ -1935,6 +2226,10 @@ class AutomatorController(QObject):
         if self._capture_listener is not None:
             self.toast.emit("Finish recording the current key or shortcut first.", "error")
             return False
+        if self._run_settings.target_mode == "browser":
+            # The page reports the click itself, so there is no screen overlay and
+            # no screen-to-viewport arithmetic to get wrong.
+            return self._start_browser_point_capture(target)
         if self._run_settings.target_mode == "window":
             try:
                 self._resolve_target_info()
@@ -2371,6 +2666,47 @@ class AutomatorController(QObject):
         except (OSError, ValueError, TypeError) as exc:
             self.toast.emit(str(exc), "error")
             return False
+
+    @Slot(str, result=bool)
+    def deleteProfilePath(self, path: str) -> bool:
+        """Delete a saved profile file. The open sequence is never discarded."""
+        if self._running or self._queue_active:
+            self.toast.emit("Stop the current run before deleting a profile.", "error")
+            return False
+        normalized = normalize_path(path)
+        name = profile_name(normalized)
+        try:
+            Path(normalized).unlink()
+        except FileNotFoundError:
+            self.toast.emit(f"{name} was already gone.", "neutral")
+            self.refreshProfiles()
+            return False
+        except OSError as exc:
+            self.toast.emit(f"Could not delete {name}: {exc}", "error")
+            return False
+
+        # Drop it from the run queue so the runner cannot point at a dead file.
+        removed_from_queue = [
+            session
+            for session in self._run_queue
+            if self._path_key(session.profile_path) == self._path_key(normalized)
+        ]
+        for session in removed_from_queue:
+            self._run_queue.remove(session)
+        if removed_from_queue:
+            self.runQueueChanged.emit()
+
+        # Keep the user's work on screen; it simply becomes unsaved again.
+        if (
+            self._current_profile_path
+            and self._path_key(self._current_profile_path) == self._path_key(normalized)
+        ):
+            self._set_current_profile(None)
+            self._set_dirty(bool(self.actions))
+
+        self.refreshProfiles()
+        self.toast.emit(f"Deleted {name}", "neutral")
+        return True
 
     def _reserved_shortcuts(self) -> set[str]:
         return canonical_global_shortcuts((

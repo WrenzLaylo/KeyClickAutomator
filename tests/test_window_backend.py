@@ -12,6 +12,8 @@ from window_backend import (
     WM_MOUSEWHEEL,
     WM_SYSKEYDOWN,
     WM_SYSKEYUP,
+    Win32WindowService,
+    WindowInfo,
     WindowMessageBackend,
     WindowTargetError,
     _packed_point,
@@ -230,3 +232,35 @@ def test_unresponsive_target_is_rejected_before_any_input_is_posted():
         raise AssertionError("Expected a WindowTargetError")
 
     assert service.messages == []
+
+
+def _info(hwnd, title):
+    return WindowInfo(hwnd, title, "Chrome_WidgetWin_1", r"C:\Chrome\chrome.exe", 9)
+
+
+def test_drifting_window_title_still_resolves_to_the_same_window():
+    """Cookie Clicker writes the live cookie count into its title bar."""
+    saved = "6.862 billion cookies - Cookie Clicker - Google Chrome"
+    candidates = [
+        _info(101, "14.152 billion cookies - Cookie Clicker - Google Chrome"),
+        _info(102, "Inbox (12) - Gmail - Google Chrome"),
+        _info(103, "GitHub - Google Chrome"),
+    ]
+
+    chosen = Win32WindowService._closest_by_title(candidates, saved)
+
+    assert chosen is not None and chosen.hwnd == 101
+
+
+def test_two_equally_similar_windows_stay_ambiguous():
+    saved = "Report - Notepad"
+    candidates = [_info(201, "Report - Notepad"), _info(202, "Report - Notepad")]
+
+    assert Win32WindowService._closest_by_title(candidates, saved) is None
+
+
+def test_an_unrelated_window_is_not_claimed_as_the_target():
+    saved = "6.862 billion cookies - Cookie Clicker - Google Chrome"
+    candidates = [_info(301, "Gmail"), _info(302, "Docs")]
+
+    assert Win32WindowService._closest_by_title(candidates, saved) is None

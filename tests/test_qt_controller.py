@@ -550,7 +550,10 @@ def test_indefinite_profile_must_be_last_in_a_sequential_queue(tmp_path):
 
     assert controller.startRunQueue() is False
     assert controller.runQueueEntries[0]["state"] == "error"
-    assert "must be last" in controller.runQueueEntries[0]["error"]
+    # The message has to name a way out, not just state the rule.
+    error = controller.runQueueEntries[0]["error"]
+    assert "repeats forever" in error
+    assert "end of the queue" in error and "Parallel" in error
     assert controller.running is False
     controller.shutdown()
 
@@ -648,7 +651,7 @@ def test_parallel_queue_rejects_desktop_and_duplicate_window_targets(tmp_path):
     controller.enqueueProfile(str(window_a))
     controller.setRunQueueMode("parallel")
     assert controller.startRunQueue() is False
-    assert "background-window profiles only" in controller.runQueueEntries[0]["error"]
+    assert "background-window and browser-tab profiles only" in controller.runQueueEntries[0]["error"]
     controller.clearRunQueue()
     controller.enqueueProfile(str(window_a))
     controller.enqueueProfile(str(window_b))
@@ -1000,6 +1003,54 @@ def test_global_shortcut_recording_restores_known_good_listener_until_apply(monk
     controller.shutdown()
 
 
+def test_deleting_a_profile_removes_the_file_and_dequeues_it(tmp_path):
+    keep = tmp_path / "Keep.kca.json"
+    doomed = tmp_path / "Doomed.kca.json"
+    save_profile(keep, [Action("key", value="a")], RunSettings(start_delay=0))
+    save_profile(doomed, [Action("key", value="b")], RunSettings(start_delay=0))
+
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    assert controller.enqueueProfile(str(doomed)) is True
+    assert controller.enqueueProfile(str(keep)) is True
+
+    assert controller.deleteProfilePath(str(doomed)) is True
+
+    assert doomed.exists() is False
+    assert keep.exists() is True
+    # A queued entry must not be left pointing at a file that no longer exists.
+    assert controller.runQueuePaths == [str(keep.resolve())]
+    assert [entry["name"] for entry in controller.profileEntries] == ["Keep"]
+    controller.shutdown()
+
+
+def test_deleting_the_open_profile_keeps_the_sequence_on_screen(tmp_path):
+    path = tmp_path / "Open.kca.json"
+    save_profile(path, [Action("key", value="a")], RunSettings(start_delay=0))
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    assert controller.openProfilePath(str(path)) is True
+    assert controller.currentProfileName == "Open"
+
+    assert controller.deleteProfilePath(str(path)) is True
+
+    # The work stays in the editor; it just stops being a saved profile.
+    assert [action.value for action in controller.actions] == ["a"]
+    assert controller.currentProfilePath == ""
+    assert controller.currentProfileName == "Untitled sequence"
+    assert controller.dirty is True
+    controller.shutdown()
+
+
+def test_a_profile_cannot_be_deleted_while_a_run_is_active(tmp_path):
+    path = tmp_path / "Busy.kca.json"
+    save_profile(path, [Action("key", value="a")], RunSettings(start_delay=0))
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    controller._set_running(True)
+
+    assert controller.deleteProfilePath(str(path)) is False
+    assert path.exists() is True
+    controller.shutdown()
+
+
 def test_all_accepted_named_global_keys_are_formatted_for_pynput():
     for value in ("caps_lock", "insert", "menu", "num_lock", "pause", "scroll_lock", "alt_gr"):
         keyboard.HotKey.parse(AutomatorController._pynput_hotkey(value))
@@ -1322,4 +1373,162 @@ def test_run_blocks_mouse_positions_recorded_for_the_other_target(monkeypatch):
     assert controller.startRunWithSettings({"startDelay": 0}) is False
     assert controller.running is False
     assert "different target" in toasts.at(toasts.count() - 1)[0]
+    controller.shutdown()
+
+
+class FakeTab:
+    def __init__(self, target_id, title, url):
+        self.target_id, self.title, self.url = target_id, title, url
+        self.websocket_url = f"ws://127.0.0.1/{target_id}"
+
+    @property
+    def label(self):
+        return self.title
+
+
+def _fake_browser(monkeypatch, tabs, available=True):
+    monkeypatch.setattr(qt_controller, "browser_available", lambda port=0: available)
+    monkeypatch.setattr(qt_controller, "list_tabs", lambda port=0: tabs)
+
+    def find(port=0, target_id="", url="", title=""):
+        for tab in tabs:
+            if url and tab.url == url:
+                return tab
+        raise qt_controller.ChromeTargetError("That tab is no longer open. Pick the browser tab again.")
+
+    monkeypatch.setattr(qt_controller, "find_tab", find)
+
+
+def test_browser_tabs_are_listed_and_one_can_be_targeted(monkeypatch):
+    tabs = [FakeTab("A", "Cookie Clicker", "https://example.com/cookie"),
+            FakeTab("B", "Docs", "https://example.com/docs")]
+    _fake_browser(monkeypatch, tabs)
+    controller = AutomatorController(start_hotkeys=False)
+
+    assert controller.refreshBrowserTabs() is True
+    assert [tab["title"] for tab in controller.browserTabs] == ["Cookie Clicker", "Docs"]
+    assert controller.browserReady is True
+
+    assert controller.setTargetMode("browser") is True
+    assert controller.selectBrowserTab("A") is True
+
+    assert controller.targetSettings["tabSelected"] is True
+    assert controller.targetSettings["tabName"] == "Cookie Clicker"
+    # The address is what survives a browser restart, so it must be persisted.
+    assert controller.runSettings["repeatForever"] in (True, False)
+    assert controller._run_settings.target_tab_url == "https://example.com/cookie"
+    controller.shutdown()
+
+
+def test_a_browser_profile_round_trips_through_a_saved_file(monkeypatch, tmp_path):
+    tabs = [FakeTab("A", "Cookie Clicker", "https://example.com/cookie")]
+    _fake_browser(monkeypatch, tabs)
+    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
+    controller.setTargetMode("browser")
+    controller.selectBrowserTab("A")
+    controller.addAction({"kind": "left_click", "x": 300, "y": 220,
+                          "coordinateSpace": "viewport",
+                          "referenceWidth": 1200, "referenceHeight": 800})
+
+    path = tmp_path / "Browser.kca.json"
+    save_profile(path, controller.actions, controller._run_settings)
+    actions, settings = load_profile(path)
+
+    assert settings.target_mode == "browser"
+    assert settings.target_tab_url == "https://example.com/cookie"
+    assert actions[0].coordinate_space == "viewport"
+    assert (actions[0].reference_width, actions[0].reference_height) == (1200, 800)
+    controller.shutdown()
+
+
+def test_a_closed_browser_tab_is_reported_before_the_run_starts(monkeypatch):
+    _fake_browser(monkeypatch, [FakeTab("A", "Cookie Clicker", "https://example.com/cookie")])
+    controller = AutomatorController(start_hotkeys=False)
+    controller.setTargetMode("browser")
+    controller.selectBrowserTab("A")
+    controller.addAction({"kind": "left_click", "x": 10, "y": 10, "coordinateSpace": "viewport"})
+
+    # The tab goes away before Start is pressed.
+    _fake_browser(monkeypatch, [])
+    toast = QSignalSpy(controller.toast)
+    controller.startRun()
+    assert any("no longer open" in toast.at(i)[0] for i in range(toast.count()))
+    assert controller.running is False
+    controller.shutdown()
+
+
+def test_a_desktop_recorded_click_is_refused_for_a_browser_target(monkeypatch):
+    _fake_browser(monkeypatch, [FakeTab("A", "Cookie Clicker", "https://example.com/cookie")])
+    controller = AutomatorController(start_hotkeys=False)
+    controller.addAction({"kind": "left_click", "x": 900, "y": 500})  # screen space
+    controller.setTargetMode("browser")
+    controller.selectBrowserTab("A")
+
+    toast = QSignalSpy(controller.toast)
+    controller.startRun()
+    assert controller.running is False
+    assert any("browser tab" in toast.at(i)[0] for i in range(toast.count()))
+    controller.shutdown()
+
+
+class ChromeWindowService(FakeWindowService):
+    def __init__(self):
+        super().__init__()
+        self.info = WindowInfo(
+            hwnd=777,
+            title="Cookie Clicker - Google Chrome",
+            class_name="Chrome_WidgetWin_1",
+            executable=r"C:\Chrome\chrome.exe",
+            process_id=4242,
+        )
+
+
+def test_start_refuses_a_click_that_was_never_recorded(monkeypatch):
+    controller = AutomatorController(start_hotkeys=False)
+    # Exactly what the editor produced before the guard existed.
+    controller.addAction({"kind": "left_click", "x": 0, "y": 0})
+    toast = QSignalSpy(controller.toast)
+
+    controller.startRun()
+
+    assert controller.running is False
+    messages = [toast.at(i)[0] for i in range(toast.count())]
+    assert any("corner" in m for m in messages), messages
+    controller.shutdown()
+
+
+def test_start_refuses_window_mode_against_a_browser_window():
+    """This combination runs flawlessly and delivers nothing."""
+    controller = AutomatorController(
+        start_hotkeys=False, window_service=ChromeWindowService()
+    )
+    controller.setTargetMode("window")
+    controller._run_settings.target_window_title = "Cookie Clicker - Google Chrome"
+    controller._run_settings.target_window_class = "Chrome_WidgetWin_1"
+    controller._run_settings.target_executable = r"C:\Chrome\chrome.exe"
+    controller.addAction({
+        "kind": "left_click", "x": 300, "y": 200,
+        "coordinateSpace": "window", "referenceWidth": 800, "referenceHeight": 600,
+    })
+    toast = QSignalSpy(controller.toast)
+
+    controller.startRun()
+
+    assert controller.running is False
+    messages = [toast.at(i)[0] for i in range(toast.count())]
+    assert any("Browser tab mode" in m for m in messages), messages
+    controller.shutdown()
+
+
+def test_preflight_reports_a_clean_desktop_sequence_as_runnable():
+    controller = AutomatorController(start_hotkeys=False)
+    controller.addAction({"kind": "key", "value": "a"})
+
+    checks = {c["name"]: c for c in controller.preflightChecks}
+
+    assert checks["Actions"]["status"] == "pass"
+    assert checks["Positions"]["status"] == "pass"
+    # Desktop always warns, because it drives the real pointer.
+    assert checks["Delivery"]["status"] == "warn"
+    assert not [c for c in checks.values() if c["status"] == "fail"]
     controller.shutdown()

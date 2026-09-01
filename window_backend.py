@@ -366,8 +366,56 @@ class Win32WindowService:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            raise WindowTargetError("More than one matching target window is open. Pick the window again.")
+            closest = self._closest_by_title(matches, selector.title)
+            if closest is not None:
+                return closest
+            raise WindowTargetError(
+                "Several open windows match this profile's saved target. "
+                "Open the profile and pick the window again."
+            )
         raise WindowTargetError("The target window is not open. Open it, then try again.")
+
+    @staticmethod
+    def _title_affinity(saved: str, candidate: str) -> int:
+        """Score how much of a saved title survives in a candidate title.
+
+        Many apps write live data into their title bar -- Cookie Clicker leads
+        with the cookie count -- so the saved title never matches exactly again
+        and matching decays to class plus executable, which selects every window
+        of that browser.  Scoring the stable head and tail of the title keeps the
+        right window identifiable while the volatile middle drifts.
+        """
+        if not saved or not candidate:
+            return 0
+        limit = min(len(saved), len(candidate))
+        prefix = 0
+        while prefix < limit and saved[prefix] == candidate[prefix]:
+            prefix += 1
+        suffix = 0
+        while (
+            suffix < limit - prefix
+            and saved[len(saved) - 1 - suffix] == candidate[len(candidate) - 1 - suffix]
+        ):
+            suffix += 1
+        return prefix + suffix
+
+    @classmethod
+    def _closest_by_title(cls, matches: list[WindowInfo], saved_title: str) -> WindowInfo | None:
+        """Return the single clearly-closest window, or None if it stays ambiguous."""
+        saved_title = saved_title.strip()
+        if not saved_title:
+            return None
+        scored = sorted(
+            ((cls._title_affinity(saved_title, info.title), info) for info in matches),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        best, runner_up = scored[0][0], scored[1][0]
+        # Only claim a winner when it shares a real span with the saved title and
+        # beats every rival outright; a tie means we genuinely cannot tell.
+        if best <= runner_up or best < max(8, len(saved_title) // 4):
+            return None
+        return scored[0][1]
 
     @staticmethod
     def ensure_usable(hwnd: int) -> None:

@@ -32,6 +32,12 @@ AbstractButton {
     padding: 12
     hoverEnabled: true
     clip: true
+
+    // Press-scale belongs to the whole control. Scaling only the background left
+    // the label standing still while the surface under it shrank.
+    transformOrigin: Item.Center
+    scale: control.down ? 0.975 : 1
+    Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
     font.family: buttonFontFamily
     font.pixelSize: 13
     font.weight: Font.DemiBold
@@ -162,8 +168,6 @@ AbstractButton {
                                     : control.surface2Color
         border.width: control.visualFocus ? 2 : control.activeNeutral ? 1 : 0
         border.color: control.visualFocus ? control.primaryColor : "#C7CED9"
-        scale: control.down ? 0.975 : 1
         Behavior on color { ColorAnimation { duration: 130 } }
-        Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
     }
 }

@@ -566,7 +566,7 @@ def test_mouse_coordinate_space_is_explicit_and_live_pointer_stays_desktop_only(
         reference_width=800,
         reference_height=600,
     ).validate()
-    with pytest.raises(ValueError, match="screen or window"):
+    with pytest.raises(ValueError, match="screen, window, or viewport"):
         Action("left_click", x=10, y=20, coordinate_space="unknown").validate()
     with pytest.raises(ValueError, match="only for Desktop"):
         Action("left_click", use_current_pointer=True, coordinate_space="window").validate()

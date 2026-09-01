@@ -834,6 +834,61 @@ def test_click_action_can_be_added_in_follow_current_pointer_mode():
     controller.shutdown()
 
 
+def test_a_click_cannot_be_added_before_its_position_is_recorded():
+    """An unrecorded click silently lands at (0,0) -- the target's corner."""
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    picker = window.findChild(QQuickItem, "actionTypePicker")
+    commit = window.findChild(QQuickItem, "actionCommitButton")
+    notice = window.findChild(QQuickItem, "pointerMissingNotice")
+    assert all(item is not None for item in (picker, commit, notice))
+
+    picker.setProperty("currentIndex", 3)  # Left click
+    _app.processEvents()
+    QTest.qWait(60)
+    assert commit.property("enabled") is False
+    assert notice.isVisible() is True
+
+    QMetaObject.invokeMethod(commit, "click", Qt.DirectConnection)
+    QTest.qWait(60)
+    assert controller.actionModel.rowCount() == 0
+
+    # Recording a position releases it.
+    controller.positionCaptured.emit(0, 640, 480, "screen", 0, 0)
+    _app.processEvents()
+    QTest.qWait(60)
+    assert commit.property("enabled") is True
+    assert notice.isVisible() is False
+
+    QMetaObject.invokeMethod(commit, "click", Qt.DirectConnection)
+    QTest.qWait(80)
+    assert controller.actionModel.rowCount() == 1
+    assert (controller.actions[0].x, controller.actions[0].y) == (640, 480)
+
+    window.close()
+    controller.shutdown()
+
+
+def test_a_follow_pointer_click_needs_no_recorded_position():
+    engine, controller = build_engine(start_hotkeys=False)
+    window = engine.rootObjects()[0]
+    picker = window.findChild(QQuickItem, "actionTypePicker")
+    follow = window.findChild(QQuickItem, "followPointerSwitch")
+    commit = window.findChild(QQuickItem, "actionCommitButton")
+
+    picker.setProperty("currentIndex", 3)
+    _app.processEvents()
+    assert commit.property("enabled") is False
+
+    follow.setProperty("checked", True)
+    _app.processEvents()
+    QTest.qWait(60)
+    assert commit.property("enabled") is True
+
+    window.close()
+    controller.shutdown()
+
+
 def test_long_toast_messages_stay_inside_the_toast_pill():
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]

@@ -165,6 +165,21 @@ ApplicationWindow {
         root.requestDestructiveAction("profile")
     }
 
+    function requestProfileDelete(path, label) {
+        if (controller.running)
+            return
+        deleteProfileDialog.profilePath = path
+        deleteProfileDialog.profileLabel = label
+        deleteProfileDialog.open()
+    }
+
+    function openTabPicker() {
+        if (controller.running)
+            return
+        controller.refreshBrowserTabs()
+        tabPickerDialog.open()
+    }
+
     function openWindowPicker() {
         if (controller.running)
             return
@@ -293,7 +308,10 @@ ApplicationWindow {
         implicitWidth: workspaceTabContent.implicitWidth + (root.layoutMode === "compact" ? 20 : 28)
         implicitHeight: 38
         radius: 11
-        color: selected ? root.surface : (pointerHover ? "#E3E8F1" : "transparent")
+        // Fade from a zero-alpha copy of the hover colour, never from "transparent".
+        // "transparent" is zero-alpha BLACK, so animating out of it drags the tab
+        // through a dark smear -- the flash e5481d5 removed from the old nav.
+        color: selected ? root.surface : (pointerHover ? "#E3E8F1" : "#00E3E8F1")
         border.width: selected ? 1 : 0
         border.color: root.line
         Behavior on color { ColorAnimation { duration: 140 } }
@@ -302,8 +320,6 @@ ApplicationWindow {
         Accessible.onPressAction: root.selectTab(workspaceTab.tabIndex)
         HoverHandler { cursorShape: Qt.PointingHandCursor; onHoveredChanged: workspaceTab.pointerHover = hovered }
         TapHandler { onTapped: root.selectTab(workspaceTab.tabIndex) }
-        ToolTip.visible: pointerHover && root.layoutMode === "compact"
-        ToolTip.text: workspaceTab.label
 
         Row {
             id: workspaceTabContent
@@ -365,8 +381,6 @@ ApplicationWindow {
         border.width: compact ? 1 : 0
         border.color: compact ? (pointerHover ? "#B8CDF7" : root.line) : "transparent"
         HoverHandler { onHoveredChanged: shortcutHint.pointerHover = hovered }
-        ToolTip.visible: compact && pointerHover
-        ToolTip.text: keyText.toUpperCase() + "  ·  " + labelText
 
         RowLayout {
             visible: !shortcutHint.compact
@@ -524,8 +538,7 @@ ApplicationWindow {
                     leading: "↓"
                     quiet: true
                     enabled: !controller.running
-                    ToolTip.visible: pointerHover
-                    ToolTip.text: "Save profile (Ctrl+S)"
+                    // Only worth a tooltip when the label itself is collapsed away.
                     Accessible.name: "Save profile"
                     onClicked: root.saveProfileWithVisibleSettings()
                 }
@@ -537,8 +550,6 @@ ApplicationWindow {
                     leading: "+"
                     quiet: true
                     enabled: !controller.running
-                    ToolTip.visible: pointerHover
-                    ToolTip.text: "New sequence"
                     Accessible.name: "New sequence"
                     onClicked: root.requestDestructiveAction("new")
                 }
@@ -679,8 +690,6 @@ ApplicationWindow {
                                     text: workspace.width > 760 ? "Undo" : ""
                                     leading: "↶"
                                     implicitWidth: workspace.width > 760 ? 72 : 42
-                                    ToolTip.visible: pointerHover
-                                    ToolTip.text: "Restore deleted action (Ctrl+Z)"
                                     onClicked: controller.undoDelete()
                                 }
                                 KButton {
@@ -691,8 +700,6 @@ ApplicationWindow {
                                     text: workspace.width > 800 ? "Test" : ""
                                     leading: "1×"
                                     implicitWidth: workspace.width > 800 ? 68 : 42
-                                    ToolTip.visible: pointerHover
-                                    ToolTip.text: "Test this action once after a safety countdown"
                                     onClicked: controller.testActionWithSettings(controller.selectedIndex, runForm.payload())
                                 }
                                 KButton {
@@ -703,8 +710,6 @@ ApplicationWindow {
                                     text: workspace.width > 860 ? "From here" : ""
                                     leading: "▶"
                                     implicitWidth: workspace.width > 860 ? 104 : 42
-                                    ToolTip.visible: pointerHover
-                                    ToolTip.text: "Run from the selected action"
                                     onClicked: controller.startRunFromWithSettings(controller.selectedIndex, runForm.payload())
                                 }
                                 KButton { visible: controller.selectedIndex >= 0 && workspace.width > 610; enabled: !controller.running; quiet: true; text: "Up"; leading: "↑"; implicitWidth: 66; onClicked: controller.moveAction(controller.selectedIndex, -1) }
@@ -966,8 +971,6 @@ ApplicationWindow {
                                                     id: dragHover
                                                     cursorShape: reorderDrag.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 }
-                                                ToolTip.visible: dragHover.hovered && !reorderDrag.active
-                                                ToolTip.text: actionList.count > 1 ? "Drag to reorder" : "Add another action to reorder"
 
                                                 Grid {
                                                     anchors.centerIn: parent
@@ -1063,12 +1066,11 @@ ApplicationWindow {
                     objectName: "profileLibraryPage"
 
                     ColumnLayout {
-                        // This content was laid out for a narrow drawer; cap it so rows
-                        // stay readable and their trailing buttons stay on screen.
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: Math.min(parent.width, 940)
+                        // Same gutters as the Sequence page so the three tabs
+                        // share one left edge.
+                        anchors.fill: parent
+                        anchors.leftMargin: root.layoutMode === "wide" ? 28 : 22
+                        anchors.rightMargin: root.layoutMode === "wide" ? 28 : 22
                         spacing: 0
                         clip: true
 
@@ -1077,8 +1079,8 @@ ApplicationWindow {
                             Layout.preferredHeight: 92
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 20
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 spacing: 8
                                 ColumnLayout {
                                     Layout.fillWidth: true
@@ -1099,14 +1101,13 @@ ApplicationWindow {
                                         font.pixelSize: 12
                                     }
                                 }
+                                Item { Layout.fillWidth: true }
                                 KButton {
                                     objectName: "refreshProfileLibraryButton"
                                     leading: "↻"
                                     text: "Refresh"
                                     implicitWidth: 92
                                     Accessible.name: "Refresh profiles"
-                                    ToolTip.visible: pointerHover
-                                    ToolTip.text: "Refresh profiles"
                                     onClicked: controller.refreshProfiles()
                                 }
                             }
@@ -1119,8 +1120,8 @@ ApplicationWindow {
                             Layout.preferredHeight: 88
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 20
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 anchors.topMargin: 12
                                 anchors.bottomMargin: 12
                                 spacing: 5
@@ -1136,8 +1137,6 @@ ApplicationWindow {
                                         color: root.ink2
                                         font.family: interMedium.name || root.font.family
                                         font.pixelSize: 11
-                                        ToolTip.visible: directoryHover.hovered
-                                        ToolTip.text: controller.profileDirectory
                                         HoverHandler { id: directoryHover }
                                     }
                                     KButton {
@@ -1160,8 +1159,8 @@ ApplicationWindow {
                                 id: profileList
                                 objectName: "profileLibraryList"
                                 anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 anchors.topMargin: 4
                                 anchors.bottomMargin: 8
                                 spacing: 8
@@ -1204,8 +1203,6 @@ ApplicationWindow {
                                               ? modelData.actionCount + " actions. Modified " + modelData.modified
                                               : "Unavailable profile"
                                         HoverHandler { onHoveredChanged: profileRow.pointerHover = hovered }
-                                        ToolTip.visible: profileRow.pointerHover
-                                        ToolTip.text: modelData.valid ? modelData.path : modelData.error
                                         onClicked: {
                                             if (profileRow.currentProfile)
                                                 root.selectTab(0)
@@ -1306,9 +1303,27 @@ ApplicationWindow {
                                     }
                                 }
                                     KButton {
+                                        id: deleteProfileButton
+                                        objectName: "deleteProfileButton_" + profileDelegate.index
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        implicitWidth: 42
+                                        implicitHeight: 38
+                                        leading: "×"
+                                        danger: true
+                                        quiet: true
+                                        enabled: !controller.running && !controller.runQueueRunning
+                                        Accessible.name: "Delete " + profileDelegate.modelData.name
+                                        onClicked: root.requestProfileDelete(
+                                            profileDelegate.profilePath,
+                                            profileDelegate.modelData.name
+                                        )
+                                    }
+                                    KButton {
                                         id: queueProfileButton
                                         objectName: "queueProfileButton_" + profileDelegate.index
-                                        anchors.right: parent.right
+                                        anchors.right: deleteProfileButton.left
+                                        anchors.rightMargin: 6
                                         anchors.verticalCenter: parent.verticalCenter
                                         implicitWidth: 76
                                         implicitHeight: 38
@@ -1320,12 +1335,6 @@ ApplicationWindow {
                                               && !profileDelegate.queued
                                               && !(profileDelegate.currentProfile && (controller.dirty || controller.runSettingsPending))
                                         Accessible.name: (profileDelegate.queued ? "Already queued " : "Queue ") + profileDelegate.modelData.name
-                                        ToolTip.visible: pointerHover
-                                        ToolTip.text: profileDelegate.currentProfile && (controller.dirty || controller.runSettingsPending)
-                                                      ? "Save this profile before queuing it"
-                                                      : profileDelegate.queued
-                                                        ? "This profile is already in the run queue"
-                                                        : "Add this saved profile to the sequential queue"
                                         onClicked: controller.enqueueProfile(profileDelegate.profilePath)
                                     }
                                 }
@@ -1389,8 +1398,8 @@ ApplicationWindow {
                             Layout.preferredHeight: 76
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 spacing: 8
                                 Item { Layout.fillWidth: true }
                                 KButton {
@@ -1426,12 +1435,11 @@ ApplicationWindow {
                     objectName: "runQueuePage"
 
                     ColumnLayout {
-                        // Laid out for a narrow drawer originally; cap the width so the
-                        // mode toggle and footer actions stay inside the page.
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: Math.min(parent.width, 940)
+                        // Same gutters as the Sequence page so the three tabs
+                        // share one left edge.
+                        anchors.fill: parent
+                        anchors.leftMargin: root.layoutMode === "wide" ? 28 : 22
+                        anchors.rightMargin: root.layoutMode === "wide" ? 28 : 22
                         spacing: 0
                         clip: true
 
@@ -1440,8 +1448,8 @@ ApplicationWindow {
                             Layout.preferredHeight: 92
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 20
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 spacing: 8
                                 ColumnLayout {
                                     Layout.fillWidth: true
@@ -1464,6 +1472,7 @@ ApplicationWindow {
                                         font.pixelSize: 12
                                     }
                                 }
+                                Item { Layout.fillWidth: true }
                                 KButton {
                                     objectName: "runQueueAddProfilesButton"
                                     text: "Profiles"
@@ -1481,8 +1490,8 @@ ApplicationWindow {
                             objectName: "runQueueModeNotice"
                             Layout.fillWidth: true
                             Layout.preferredHeight: 106
-                            Layout.leftMargin: 14
-                            Layout.rightMargin: 14
+                            Layout.leftMargin: 0
+                            Layout.rightMargin: 0
                             Layout.topMargin: 12
                             Layout.bottomMargin: 8
                             radius: 13
@@ -1549,8 +1558,8 @@ ApplicationWindow {
                                 id: runQueueList
                                 objectName: "runQueueList"
                                 anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 anchors.topMargin: 6
                                 anchors.bottomMargin: 8
                                 spacing: 8
@@ -1670,8 +1679,6 @@ ApplicationWindow {
                                                 color: root.red
                                                 font.family: interMedium.name || root.font.family
                                                 font.pixelSize: 10
-                                                ToolTip.visible: queueErrorHover.hovered
-                                                ToolTip.text: text
                                                 HoverHandler { id: queueErrorHover }
                                             }
                                             Rectangle {
@@ -1828,8 +1835,8 @@ ApplicationWindow {
                             Layout.preferredHeight: 84
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 14
+                                anchors.leftMargin: 0
+                                anchors.rightMargin: 0
                                 spacing: 8
                                 KButton {
                                     objectName: "runQueueClearButton"
@@ -1897,9 +1904,9 @@ ApplicationWindow {
                     Text {
                         objectName: "runStatusMessage"
                         Layout.fillWidth: true
-                        text: controller.capturePending ? "Pick a point on the frozen screen · Esc cancels" : controller.running ? controller.status : controller.targetSettings.mode === "window" && !controller.targetSettings.windowSelected ? "Choose a background target window" : controller.canRun ? "Ready when you are" : (actionList.count > 0 ? "Enable an action to begin" : "Add an action to begin")
+                        text: controller.capturePending ? "Pick a point on the frozen screen · Esc cancels" : controller.running ? controller.status : controller.preflightBlocked ? controller.preflightSummary : controller.canRun ? "Ready when you are" : (actionList.count > 0 ? "Enable an action to begin" : "Add an action to begin")
                         elide: Text.ElideRight
-                        color: root.ink2
+                        color: controller.preflightBlocked && !controller.running ? root.red : root.ink2
                         font.family: interMedium.name || root.font.family
                         font.pixelSize: 12
                     }
@@ -1936,10 +1943,6 @@ ApplicationWindow {
                     border.width: 1
                     border.color: "#E2E6ED"
                     HoverHandler { id: shortcutDockHover }
-                    ToolTip.visible: shortcutDockHover.hovered
-                    ToolTip.text: controller.targetSettings.mode === "window"
-                                  ? "Background mode: " + controller.runSettings.stopHotkey.toUpperCase() + " stops the run."
-                                  : "Desktop corner fail-safe is active."
                     Row {
                         id: shortcutDockRow
                         anchors.centerIn: parent
@@ -2002,11 +2005,11 @@ ApplicationWindow {
                             objectName: "runStartButton"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            text: controller.running ? "Running" : runForm.shortcutValidation.hasConflict ? "Fix shortcuts" : controller.runSettingsPending ? "Apply & start" : "Start"
+                            text: controller.running ? "Running" : runForm.shortcutValidation.hasConflict ? "Fix shortcuts" : controller.preflightBlocked ? "Not ready" : controller.runSettingsPending ? "Apply & start" : "Start"
                             leading: controller.running ? "●" : "▶"
                             keyHint: controller.runSettings.startHotkey
                             primary: true
-                            enabled: !controller.running && controller.canRun && !runForm.shortcutValidation.hasConflict && (controller.targetSettings.mode === "desktop" || controller.targetSettings.windowSelected)
+                            enabled: !controller.running && controller.canRun && !controller.preflightBlocked && !runForm.shortcutValidation.hasConflict
                             onClicked: controller.startRunWithSettings(runForm.payload())
                         }
                     }
@@ -2126,11 +2129,22 @@ ApplicationWindow {
                             property int referenceWidth2: 0
                             property int referenceHeight2: 0
                             property bool desktopTarget: controller.targetSettings.mode === "desktop"
+                            // Each target mode records positions in its own space.
+                            readonly property string expectedSpace: controller.targetSettings.mode === "desktop"
+                                                                    ? "screen"
+                                                                    : controller.targetSettings.mode === "browser"
+                                                                      ? "viewport"
+                                                                      : "window"
                             // A follow-pointer click has no recorded position, so it can never
                             // belong to the wrong target and never needs recording again.
                             property bool followingPointer: clickAction && followPointerSwitch.checked && desktopTarget
                             property bool needsPointerPosition: mouseAction && !followingPointer
-                            property bool targetMismatch: mouseAction && !followingPointer && coordinateSpace !== (desktopTarget ? "screen" : "window")
+                            // A mouse action whose position was never recorded or typed
+                            // silently ends up at (0, 0) -- the corner of the target,
+                            // which looks like "the automation does nothing".
+                            property bool pointerProvided: false
+                            readonly property bool pointerMissing: needsPointerPosition && !pointerProvided
+                            property bool targetMismatch: mouseAction && !followingPointer && coordinateSpace !== expectedSpace
 
                             function kindValue() {
                                 var values = ["key", "hotkey", "text", "left_click", "right_click", "double_click", "middle_click", "scroll", "drag"]
@@ -2143,11 +2157,12 @@ ApplicationWindow {
                                 xField.text = "0"; yField.text = "0"; x2Field.text = "0"; y2Field.text = "0"
                                 amountField.text = "-3"; durationField.text = "0.4"; repeatsField.text = "1"; delayField.text = "0.10"
                                 followPointerSwitch.checked = false
-                                coordinateSpace = controller.targetSettings.mode === "window" ? "window" : "screen"
+                                coordinateSpace = expectedSpace
                                 referenceWidth = 0
                                 referenceHeight = 0
                                 referenceWidth2 = 0
                                 referenceHeight2 = 0
+                                pointerProvided = false
                             }
                             function loadAction(index) {
                                 var a = controller.actionAt(index)
@@ -2168,6 +2183,7 @@ ApplicationWindow {
                                 referenceHeight = a.reference_height || 0
                                 referenceWidth2 = a.reference_width2 || 0
                                 referenceHeight2 = a.reference_height2 || 0
+                                pointerProvided = true
                             }
                             function payload() {
                                 // Following the pointer drops the recorded position entirely, so the
@@ -2335,7 +2351,13 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     anchors.margins: 11
                                     wrapMode: Text.WordWrap
-                                    text: editor.desktopTarget ? "This position belongs to a background window. Record it again for Desktop mode before saving or running." : "This position belongs to the desktop. Record it again for the selected window before saving or running."
+                                    text: "This position was recorded for a different target. Record it again for "
+                                        + (editor.expectedSpace === "screen"
+                                           ? "Desktop mode"
+                                           : editor.expectedSpace === "viewport"
+                                             ? "the selected browser tab"
+                                             : "the selected window")
+                                        + " before saving or running."
                                     color: root.red
                                     font.family: interMedium.name || root.font.family
                                     font.pixelSize: 10
@@ -2347,8 +2369,20 @@ ApplicationWindow {
                             RowLayout {
                                 visible: editor.needsPointerPosition
                                 Layout.fillWidth: true
-                                KField { id: xField; Layout.fillWidth: true; placeholderText: "X"; inputMethodHints: Qt.ImhDigitsOnly }
-                                KField { id: yField; Layout.fillWidth: true; placeholderText: "Y"; inputMethodHints: Qt.ImhDigitsOnly }
+                                KField {
+                                    id: xField
+                                    Layout.fillWidth: true
+                                    placeholderText: "X"
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                    onTextEdited: editor.pointerProvided = true
+                                }
+                                KField {
+                                    id: yField
+                                    Layout.fillWidth: true
+                                    placeholderText: "Y"
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                    onTextEdited: editor.pointerProvided = true
+                                }
                             }
                             KButton {
                                 objectName: "recordPointerPosition"
@@ -2437,13 +2471,34 @@ ApplicationWindow {
                                     onClicked: controller.startRunFromWithSettings(root.editorIndex, runForm.payload())
                                 }
                             }
+                            Rectangle {
+                                objectName: "pointerMissingNotice"
+                                visible: editor.pointerMissing
+                                Layout.fillWidth: true
+                                Layout.topMargin: visible ? 8 : 0
+                                Layout.preferredHeight: visible ? 54 : 0
+                                radius: 12
+                                color: root.primarySoft
+                                border.width: 1
+                                border.color: "#B9CEFA"
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.margins: 11
+                                    wrapMode: Text.WordWrap
+                                    text: "Record where this should happen first. Without a position "
+                                        + "the action lands at the target's top-left corner."
+                                    color: root.primary
+                                    font.family: interMedium.name || root.font.family
+                                    font.pixelSize: 11
+                                }
+                            }
                             KButton {
                                 objectName: "actionCommitButton"
                                 Layout.fillWidth: true
                                 Layout.topMargin: 10
                                 implicitHeight: 48
                                 primary: true
-                                enabled: !editor.targetMismatch
+                                enabled: !editor.targetMismatch && !editor.pointerMissing
                                 text: root.editorIndex >= 0 ? "Update action" : "Add to sequence"
                                 leading: root.editorIndex >= 0 ? "✓" : "+"
                                 onClicked: {
@@ -2482,7 +2537,79 @@ ApplicationWindow {
                             function apply() {
                                 return controller.applyRunSettings(payload())
                             }
-                            FormLabel { text: "TARGET" }
+                            FormLabel { text: "BEFORE YOU RUN" }
+                            Rectangle {
+                                objectName: "preflightPanel"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: preflightColumn.implicitHeight + 20
+                                radius: 13
+                                color: root.surface2
+                                border.width: 1
+                                border.color: root.line
+
+                                ColumnLayout {
+                                    id: preflightColumn
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 10
+                                    spacing: 6
+
+                                    Repeater {
+                                        model: controller.preflightChecks
+                                        delegate: RowLayout {
+                                            required property var modelData
+                                            required property int index
+                                            objectName: "preflightCheck_" + index
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Rectangle {
+                                                Layout.alignment: Qt.AlignTop
+                                                Layout.topMargin: 2
+                                                width: 14; height: 14; radius: 7
+                                                color: modelData.status === "fail" ? root.redSoft
+                                                     : modelData.status === "warn" ? "#FFF3E0"
+                                                     : root.successSoft
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.status === "fail" ? "×"
+                                                        : modelData.status === "warn" ? "!" : "✓"
+                                                    color: modelData.status === "fail" ? root.red
+                                                         : modelData.status === "warn" ? "#B26A00" : root.green
+                                                    font.family: interSemiBold.name || root.font.family
+                                                    font.pixelSize: 9
+                                                }
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 1
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.name + "  ·  " + modelData.detail
+                                                    wrapMode: Text.WordWrap
+                                                    color: modelData.status === "fail" ? root.red : root.ink2
+                                                    font.family: interMedium.name || root.font.family
+                                                    font.pixelSize: 10
+                                                    lineHeight: 1.2
+                                                }
+                                                Text {
+                                                    visible: modelData.remedy !== "" && modelData.status !== "pass"
+                                                    Layout.fillWidth: true
+                                                    text: modelData.remedy
+                                                    wrapMode: Text.WordWrap
+                                                    color: root.ink3
+                                                    font.family: interRegular.name || root.font.family
+                                                    font.pixelSize: 10
+                                                    lineHeight: 1.2
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            FormLabel { text: "TARGET"; Layout.topMargin: 6 }
                             Text { text: "Where should actions run?"; color: root.ink; font.family: interBold.name || root.font.family; font.pixelSize: 17 }
                             Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Desktop uses your real keyboard and pointer. Background window sends actions only to one selected app."; color: root.ink2; font.family: interRegular.name || root.font.family; font.pixelSize: 11; lineHeight: 1.25 }
                             RowLayout {
@@ -2509,6 +2636,18 @@ ApplicationWindow {
                                             root.openWindowPicker()
                                     }
                                 }
+                                KButton {
+                                    id: browserTargetModeButton
+                                    objectName: "browserTargetModeButton"
+                                    Layout.fillWidth: true
+                                    text: "Browser tab"
+                                    leading: "◈"
+                                    activeNeutral: controller.targetSettings.mode === "browser"
+                                    onClicked: {
+                                        if (controller.setTargetMode("browser"))
+                                            root.openTabPicker()
+                                    }
+                                }
                             }
                             Text {
                                 visible: controller.targetSettings.mode === "desktop"
@@ -2518,6 +2657,50 @@ ApplicationWindow {
                                 color: root.ink3
                                 font.family: interRegular.name || root.font.family
                                 font.pixelSize: 10
+                            }
+                            Rectangle {
+                                objectName: "browserTargetPanel"
+                                visible: controller.targetSettings.mode === "browser"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? 148 : 0
+                                radius: 13
+                                color: root.surface2
+                                border.width: 1
+                                border.color: controller.targetSettings.tabSelected ? "#C9D8F5" : root.line
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 7
+                                    FormLabel {
+                                        text: controller.targetSettings.tabSelected ? "SELECTED TAB" : "NO TAB SELECTED"
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: controller.targetSettings.tabName
+                                        elide: Text.ElideMiddle
+                                        color: controller.targetSettings.tabSelected ? root.ink : root.ink3
+                                        font.family: interSemiBold.name || root.font.family
+                                        font.pixelSize: 12
+                                    }
+                                    KButton {
+                                        objectName: "pickBrowserTabButton"
+                                        Layout.fillWidth: true
+                                        text: controller.targetSettings.tabSelected ? "Browse open tabs" : "Choose a tab"
+                                        leading: "◈"
+                                        onClicked: root.openTabPicker()
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        text: "Clicks go to this tab only. Your pointer stays free and other "
+                                            + "Chrome windows and profiles are untouched, even while the tab "
+                                            + "is hidden or its window is minimised."
+                                        color: root.ink3
+                                        font.family: interRegular.name || root.font.family
+                                        font.pixelSize: 10
+                                        lineHeight: 1.2
+                                    }
+                                }
                             }
                             Rectangle {
                                 visible: controller.targetSettings.mode === "window"
@@ -2884,8 +3067,6 @@ ApplicationWindow {
                                 enabled: !modelData.minimized
                                 hoverEnabled: true
                                 Accessible.name: "Use " + modelData.appName + ", " + modelData.title
-                                ToolTip.visible: hovered
-                                ToolTip.text: modelData.title
                                 onClicked: controller.selectWindowTarget(modelData.handle)
                                 background: Rectangle {
                                     radius: 15
@@ -3057,6 +3238,271 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: tabPickerDialog
+        objectName: "tabPickerDialog"
+        parent: Overlay.overlay
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(700, root.width - 48)
+        height: Math.min(560, root.height - 64)
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 0
+        background: Rectangle {
+            radius: 18
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            clip: true
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 86
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 14
+                    spacing: 8
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text {
+                            text: "Choose a browser tab"
+                            color: root.ink
+                            font.family: interBold.name || root.font.family
+                            font.pixelSize: 20
+                            font.weight: Font.Bold
+                        }
+                        Text {
+                            text: controller.browserReady
+                                  ? controller.browserTabs.length + " tab"
+                                    + (controller.browserTabs.length === 1 ? "" : "s")
+                                    + " available"
+                                  : "KeyClick's automation browser is not running"
+                            color: root.ink2
+                            font.family: interRegular.name || root.font.family
+                            font.pixelSize: 12
+                        }
+                    }
+                    KButton {
+                        objectName: "refreshBrowserTabsButton"
+                        text: "Refresh"
+                        leading: "↻"
+                        implicitWidth: 96
+                        onClicked: controller.refreshBrowserTabs()
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            Rectangle {
+                objectName: "browserNotRunningNotice"
+                visible: !controller.browserReady
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 150 : 0
+                Layout.margins: visible ? 16 : 0
+                radius: 13
+                color: root.primarySoft
+                border.width: 1
+                border.color: "#B9CEFA"
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    spacing: 8
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "Browser automation runs in its own Chrome profile, separate from "
+                            + "your everyday windows. Start it here, sign in or open the page you "
+                            + "want, then pick its tab."
+                        color: root.primary
+                        font.family: interMedium.name || root.font.family
+                        font.pixelSize: 11
+                        lineHeight: 1.25
+                    }
+                    KButton {
+                        objectName: "startBrowserButton"
+                        Layout.fillWidth: true
+                        implicitHeight: 44
+                        primary: true
+                        text: "Start automation browser"
+                        leading: "◈"
+                        onClicked: controller.startBrowser()
+                    }
+                }
+            }
+
+            ListView {
+                id: tabPickerList
+                objectName: "browserTabList"
+                visible: controller.browserReady
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: 14
+                Layout.rightMargin: 14
+                Layout.topMargin: 8
+                spacing: 8
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: controller.browserTabs
+                ScrollBar.vertical: KScrollBar { id: tabPickerScrollBar; objectName: "browserTabScrollBar" }
+
+                delegate: AbstractButton {
+                    id: tabRow
+                    required property var modelData
+                    required property int index
+                    property bool pointerHover: false
+                    objectName: "browserTabChoice_" + index
+                    width: ListView.view.width
+                           - (tabPickerScrollBar.visible ? tabPickerScrollBar.width + 8 : 0)
+                    height: 66
+                    leftPadding: 14
+                    rightPadding: 14
+                    hoverEnabled: true
+                    Accessible.name: "Automate tab " + tabRow.modelData.title
+                    HoverHandler { onHoveredChanged: tabRow.pointerHover = hovered }
+                    onClicked: {
+                        if (controller.selectBrowserTab(tabRow.modelData.id))
+                            tabPickerDialog.close()
+                    }
+                    background: Rectangle {
+                        radius: 13
+                        color: tabRow.modelData.current ? root.primarySoft
+                             : tabRow.down ? "#E8EEF8"
+                             : tabRow.pointerHover ? "#F4F7FF"
+                             : root.surface
+                        border.width: 1
+                        border.color: tabRow.modelData.current ? "#B9CEFA" : root.line
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                    contentItem: ColumnLayout {
+                        spacing: 2
+                        Text {
+                            Layout.fillWidth: true
+                            text: tabRow.modelData.title
+                            elide: Text.ElideRight
+                            color: root.ink
+                            font.family: interSemiBold.name || root.font.family
+                            font.pixelSize: 13
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: tabRow.modelData.url
+                            elide: Text.ElideMiddle
+                            color: root.ink3
+                            font.family: interRegular.name || root.font.family
+                            font.pixelSize: 10
+                        }
+                    }
+                }
+            }
+
+            Item {
+                objectName: "browserTabEmptyState"
+                visible: controller.browserReady && controller.browserTabs.length === 0
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 90 : 0
+                Text {
+                    anchors.centerIn: parent
+                    text: "No tabs open. Open a page in the automation browser, then Refresh."
+                    color: root.ink3
+                    font.family: interRegular.name || root.font.family
+                    font.pixelSize: 12
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 66
+                KButton {
+                    objectName: "closeTabPickerButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: 110
+                    text: "Close"
+                    onClicked: tabPickerDialog.close()
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: deleteProfileDialog
+        objectName: "deleteProfileDialog"
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        width: 460
+        height: 246
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 22
+        property string profilePath: ""
+        property string profileLabel: ""
+        background: Rectangle {
+            radius: 18
+            color: root.surface
+            border.width: 1
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 10
+            Text {
+                text: "Delete this profile?"
+                color: root.ink
+                font.family: interBold.name || root.font.family
+                font.pixelSize: 20
+                font.weight: Font.Bold
+            }
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "“" + deleteProfileDialog.profileLabel + "” will be deleted from disk. "
+                    + "This cannot be undone. The sequence open in the editor is kept."
+                color: root.ink2
+                font.family: interRegular.name || root.font.family
+                font.pixelSize: 12
+                lineHeight: 1.3
+            }
+            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                KButton {
+                    objectName: "cancelDeleteProfileButton"
+                    text: "Cancel"
+                    Layout.fillWidth: true
+                    implicitHeight: 44
+                    onClicked: {
+                        deleteProfileDialog.profilePath = ""
+                        deleteProfileDialog.close()
+                    }
+                }
+                KButton {
+                    objectName: "confirmDeleteProfileButton"
+                    text: "Delete"
+                    leading: "×"
+                    danger: true
+                    Layout.fillWidth: true
+                    implicitHeight: 44
+                    onClicked: {
+                        var target = deleteProfileDialog.profilePath
+                        deleteProfileDialog.profilePath = ""
+                        deleteProfileDialog.close()
+                        controller.deleteProfilePath(target)
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: unsavedDialog
         objectName: "unsavedChangesDialog"
         modal: true
@@ -3202,6 +3648,7 @@ ApplicationWindow {
                 editor.referenceHeight2 = referenceHeight
             }
             editor.coordinateSpace = coordinateSpace
+            editor.pointerProvided = true
         }
         function onActionKeyCaptured(value) {
             if (editor.kindValue() === "key")

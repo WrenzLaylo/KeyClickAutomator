@@ -130,8 +130,8 @@ class Action:
         if self.kind == "text" and len(self.value) > 10_000:
             raise ValueError("Text actions are limited to 10,000 characters.")
         click_actions = {"left_click", "right_click", "double_click", "middle_click"}
-        if self.coordinate_space not in {"screen", "window"}:
-            raise ValueError("Mouse coordinate space must be screen or window.")
+        if self.coordinate_space not in {"screen", "window", "viewport"}:
+            raise ValueError("Mouse coordinate space must be screen, window, or viewport.")
         if self.use_current_pointer and self.kind not in click_actions:
             raise ValueError("Follow current pointer is available only for click actions.")
         if self.use_current_pointer and self.coordinate_space != "screen":
@@ -200,10 +200,19 @@ class RunSettings:
     target_window_title: str = ""
     target_window_class: str = ""
     target_executable: str = ""
+    # Browser mode addresses one tab through the DevTools protocol. The tab id dies
+    # with the browser, so the address is what actually identifies it again later.
+    target_tab_url: str = ""
+    target_tab_title: str = ""
+    browser_port: int = 9222
 
     def validate(self) -> None:
-        if self.target_mode not in {"desktop", "window"}:
-            raise ValueError("Target mode must be Desktop or Background window.")
+        if self.target_mode not in {"desktop", "window", "browser"}:
+            raise ValueError("Target mode must be Desktop, Background window, or Browser tab.")
+        if self.target_mode == "browser" and not self.target_tab_url.strip():
+            raise ValueError("Choose a browser tab in Run settings before starting browser mode.")
+        if not 1 <= self.browser_port <= 65535:
+            raise ValueError("Browser debug port must be between 1 and 65535.")
         if not self.repeat_forever and not 1 <= self.repeat_count <= 1_000_000:
             raise ValueError("Repeat count must be from 1 to 1,000,000.")
         hotkeys = {
@@ -304,7 +313,7 @@ class AutomationRunner:
         if x is None or y is None:
             raise ValueError("Mouse actions need a recorded X/Y position.")
         scaler = getattr(self.backend, "scale_point", None)
-        if action.coordinate_space == "window" and callable(scaler):
+        if action.coordinate_space in {"window", "viewport"} and callable(scaler):
             reference_width = action.reference_width2 if destination and action.reference_width2 else action.reference_width
             reference_height = action.reference_height2 if destination and action.reference_height2 else action.reference_height
             return scaler(x, y, reference_width, reference_height)

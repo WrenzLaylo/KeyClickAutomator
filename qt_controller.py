@@ -62,6 +62,7 @@ from profile_history import restore as restore_version, snapshot, versions
 from controller_capture import CaptureMixin
 from controller_signals import ControllerSignals
 from controller_profiles import ProfilesMixin
+from controller_queue import QueueMixin
 from controller_running import MAX_PARALLEL_SESSIONS, RunningMixin
 from run_session import RunSession
 from shortcut_service import global_shortcut_conflicts, pynput_hotkey
@@ -207,7 +208,9 @@ class ActionListModel(QAbstractListModel):
         self.dataChanged.emit(model_index, model_index, roles)
 
 
-class AutomatorController(RunningMixin, CaptureMixin, ProfilesMixin, QObject):
+class AutomatorController(
+    QueueMixin, RunningMixin, CaptureMixin, ProfilesMixin, QObject
+):
 
     def __init__(
         self,

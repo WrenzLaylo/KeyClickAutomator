@@ -100,6 +100,10 @@ ApplicationWindow {
             controller.cancelWindowPick()
         controller.selectedIndex = -1
         root.editorIndex = -1
+        // Anything that edits the sequence has to land you where the sequence is.
+        // Doing this from another tab wiped the sequence with nothing on screen
+        // to show for it, which read as "the button does nothing".
+        root.selectTab(0)
         root.activeInspectorTab = 0
         root.inspectorOpen = true
         editor.reset()
@@ -220,7 +224,11 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Z"
         enabled: controller.canUndo && !controller.running
-        onActivated: controller.undoDelete()
+        onActivated: {
+            // Restoring an action off-tab would be invisible too.
+            root.selectTab(0)
+            controller.undoDelete()
+        }
     }
     Shortcut {
         sequence: "Ctrl+S"

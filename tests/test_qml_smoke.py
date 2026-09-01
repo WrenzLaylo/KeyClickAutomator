@@ -1335,3 +1335,29 @@ def test_added_actions_replace_empty_state_with_visible_sequence_cards():
     assert run_status.property("text") == "Ready when you are"
     window.close()
     controller.shutdown()
+
+
+def test_editing_the_sequence_from_another_tab_lands_you_on_the_sequence(tmp_path):
+    """New sequence used to wipe the sequence silently while you watched the Runner."""
+    from engine import Action, RunSettings, save_profile
+
+    path = tmp_path / "Mine.kca.json"
+    save_profile(path, [Action("key", value="a"), Action("key", value="b")],
+                 RunSettings(start_delay=0))
+    engine, controller = build_engine(start_hotkeys=False, profile_directory=tmp_path)
+    window = engine.rootObjects()[0]
+    assert controller.openProfilePath(str(path)) is True
+    assert controller.dirty is False
+
+    show_tab(window, 2, settle=150)          # Runner
+    new_button = window.findChild(QQuickItem, "workspaceNav_new")
+    QMetaObject.invokeMethod(new_button, "click", Qt.DirectConnection)
+    QTest.qWait(200)
+
+    # The sequence is cleared, so you must be looking at it.
+    assert controller.actionModel.rowCount() == 0
+    assert window.property("activeTab") == 0
+    assert window.findChild(QQuickItem, "runInspector").isVisible() is True
+
+    window.close()
+    controller.shutdown()

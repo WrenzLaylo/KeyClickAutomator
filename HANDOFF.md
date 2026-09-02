@@ -33,19 +33,18 @@ task instead.
 
 ## 2. Refactor: unfinished
 
-The goal is **no file over 600 lines**. **Every QML file is now under it.** Five
-remain, all Python:
+The goal is **no file over 600 lines**. Every QML file and every source module is
+now under it. Four remain — one module and three test files:
 
 ```
-1704  tests/test_qt_controller.py
-1383  qt_controller.py
-1315  tests/test_qml_smoke.py
- 825  controller_running.py
+1692  tests/test_qt_controller.py
+1317  tests/test_qml_smoke.py
+ 822  controller_running.py
  616  tests/test_engine.py
 ```
 
-Already split: `Main.qml` 3504→1958→**456**, `qt_controller.py` 2956→1383,
-`window_backend.py` 866→299, and `controller_running.py` 1071→825.
+Already split: `Main.qml` 3504→1958→**456**, `qt_controller.py` 2956→1383→**528**,
+`window_backend.py` 866→299, and `controller_running.py` 1071→822.
 
 `Main.qml` came apart into `components/AppHeader.qml` (127),
 `components/RunBar.qml` (153), `pages/SequencePage.qml` (511), and the inspector,
@@ -54,11 +53,13 @@ the shell and tab bar), `components/ActionEditorForm.qml` (464) and
 `components/RunSettingsForm.qml` (268). Each form owns the `Connections` handlers
 that write into its own fields; only `onToast` stayed on the root.
 
+`qt_controller.py` shed two more mixins the same way: `controller_actions.py`
+(349, the ActionListModel and every action edit) and `controller_targeting.py`
+(545, windows, browser tabs and the unified picker). What is left is the object's
+own wiring — construction, profile and draft state, run settings, and hotkeys.
+
 ### What each remaining split needs
 
-- **`qt_controller.py` → ~500.** Two more mixins: `controller_actions.py`
-  (ActionListModel + action CRUD) and `controller_targeting.py` (window, browser,
-  unified picker).
 - **`controller_running.py` → ~450.** Split sessions/workers from progress and
   completion reporting.
 - **Test files.** Split to mirror the source modules.
@@ -95,6 +96,11 @@ that open them are unchanged.
 2. **A moved symbol changes where tests must patch it.** `AutomationRunner` is
    resolved in `controller_running` now, so `monkeypatch.setattr(qt_controller,
    "AutomationRunner", …)` silently stops working. Patch where it is *used*.
+   The targeting split hit the louder version of this: tests reached
+   `qt_controller.pyautogui`, `.ChromeTargetError` and `.WindowTargetError`, none
+   of which qt_controller defines — it merely imported them. Twelve tests failed
+   at once. Name the module that owns the symbol (`chrome_backend`,
+   `window_backend`) or the library itself, not whatever happened to re-export it.
 3. **`controller: controller` on an extracted component shadows the context
    property with itself.** Tests passed; the running app was full of
    `ReferenceError`. Do not re-declare `controller` — it is global.
@@ -208,7 +214,10 @@ Two guards came out of this and both are in:
 
 ## 6. Open items not yet started
 
-- `enqueueCurrentProfile` and `runQueueActiveCount` on the controller have no QML
-  callers; only tests exercise them. Wire up or drop.
-- `_start_parallel_queue`'s `started == 0` branch is unreachable.
 - The `venv` had no `pip` until `ensurepip` was run for `websocket-client`.
+
+Dropped rather than kept: `enqueueCurrentProfile` and `runQueueActiveCount` had
+no QML callers and only tests exercised them, and `_start_parallel_queue`'s
+`started == 0` branch really was unreachable — `startRunQueue` reloads every
+session, which resets its state to `queued`, and it refuses to start at all
+unless nothing else is running, so the first session can never fail to start.

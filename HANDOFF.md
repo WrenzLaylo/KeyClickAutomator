@@ -33,10 +33,10 @@ task instead.
 
 ## 2. Refactor: unfinished
 
-The goal is **no file over 600 lines**. Six remain:
+The goal is **no file over 600 lines**. **Every QML file is now under it.** Five
+remain, all Python:
 
 ```
-1958  qml/Main.qml
 1704  tests/test_qt_controller.py
 1383  qt_controller.py
 1315  tests/test_qml_smoke.py
@@ -44,16 +44,18 @@ The goal is **no file over 600 lines**. Six remain:
  616  tests/test_engine.py
 ```
 
-Already split: `Main.qml` 3504→1958, `qt_controller.py` 2956→1383,
+Already split: `Main.qml` 3504→1958→**456**, `qt_controller.py` 2956→1383,
 `window_backend.py` 866→299, and `controller_running.py` 1071→825.
+
+`Main.qml` came apart into `components/AppHeader.qml` (127),
+`components/RunBar.qml` (153), `pages/SequencePage.qml` (511), and the inspector,
+which was 818 on its own and split again into `components/RunInspector.qml` (133,
+the shell and tab bar), `components/ActionEditorForm.qml` (464) and
+`components/RunSettingsForm.qml` (268). Each form owns the `Connections` handlers
+that write into its own fields; only `onToast` stayed on the root.
 
 ### What each remaining split needs
 
-- **`qml/Main.qml` → ~400.** Extract the Run inspector (~700 lines, the bulk),
-  the sequence page (~490), app header (~120), run bar (~150). Profiles and
-  Runner came out cleanly because they only reached outward through `root.*`.
-  **The sequence page is different** — it also reaches the `inspector` and
-  `runForm` ids, so those must be passed in as properties.
 - **`qt_controller.py` → ~500.** Two more mixins: `controller_actions.py`
   (ActionListModel + action CRUD) and `controller_targeting.py` (window, browser,
   unified picker).
@@ -84,7 +86,7 @@ take an `app` property pointing at the application root instead of reaching an
 outer id. Their ids stay at the call site in `Main.qml`, so the root functions
 that open them are unchanged.
 
-### Four traps this refactor hit — expect them again
+### Six traps this refactor hit — expect them again
 
 1. **Splitting on a line boundary cuts a decorator from its method.** Happened
    four times (`_path_key` twice, `startPositionCapture`, `recoverDraft`). The
@@ -100,6 +102,25 @@ that open them are unchanged.
    `qml/pages/` resolves nowhere, and QML does not error on a missing image — it
    just draws nothing. `test_split_qml_files_reference_assets_from_their_own_directory`
    guards this now.
+5. **A property assigned from the id of the same name binds to itself.**
+   `RunBar { runForm: runForm }` reads perfectly and silently resolves to the
+   RunBar's own null property, not to the form. Give one of the two a different
+   name — the inspector publishes `runSettingsForm` and the id stays `runForm`.
+   This is trap 3 wearing a different hat.
+6. **An id is invisible outside the file that declares it, and nothing warns.**
+   `RecoveryDialog.qml` called `editor.loadAction(...)` for who knows how long;
+   `editor` evaluated to `undefined` and the call threw the moment anyone
+   recovered a draft with an action selected. It goes through
+   `app.loadActionIntoEditor(index)` now, and
+   `test_no_qml_file_calls_through_an_id_that_lives_in_another_file` fails on any
+   new instance.
+
+Also: **`test_qml_design_contract.py` pins literal QML text**, including `root.`
+prefixes. Renaming a receiver during a split breaks assertions that have nothing
+to do with what changed. Five needed updating here (the logo path, two
+`root.beginSequenceDrag`/`updateSequenceDrag` calls, two
+`root.shortcutRecordingTarget` ones); the precedent from the earlier split is to
+loosen the prefix rather than pin the new one.
 
 ---
 
@@ -178,6 +199,10 @@ Two guards came out of this and both are in:
   `app.exec()`. This nearly caused a fix for a non-existent performance bug.
 - **A green suite does not mean the UI is intact.** A pure refactor with 235
   passing tests still shipped blank profile icons. Render and look.
+  `tests/test_qml_component_boundaries.py` now reads the QML warning stream while
+  walking every tab, inspector tab and breakpoint, which catches the unresolved
+  reference class of that bug without a human. It does not catch "renders, looks
+  wrong" — that still needs eyes on a screenshot.
 
 ---
 

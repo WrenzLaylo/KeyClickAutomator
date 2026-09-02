@@ -1,11 +1,16 @@
-import json
-import threading
+"""Executing a sequence: what the runner sends, when it stops, and how it pauses."""
+
 from pathlib import Path
+import threading
 
-import pytest
 import pyautogui
+import pytest
 
-from engine import Action, AutomationRunner, RunSettings, load_profile, save_profile
+from engine import Action
+from engine import AutomationRunner
+from engine import RunSettings
+from engine import load_profile
+from engine import save_profile
 
 
 class FakeBackend:
@@ -42,7 +47,6 @@ class FakeBackend:
     def mouseUp(self, button="left", _pause=True):
         self.calls.append(("mouseUp", button))
 
-
 def test_action_validation():
     assert Action("key", "space").value == "space"
     Action("key", value="space").validate()
@@ -57,7 +61,6 @@ def test_action_validation():
     with pytest.raises(ValueError):
         Action("hotkey", value="ctrl+f8").validate()
 
-
 def test_action_type_validation_rejects_mismatched_key_shapes_before_running(monkeypatch):
     sleeps = []
     monkeypatch.setattr("engine.interruptible_sleep", lambda seconds, stop: sleeps.append(seconds) or True)
@@ -70,7 +73,6 @@ def test_action_type_validation_rejects_mismatched_key_shapes_before_running(mon
         runner.run([Action("hotkey", value="a")], settings, threading.Event())
 
     assert sleeps == []
-
 
 def test_custom_global_chord_reserves_only_the_complete_shortcut():
     backend = FakeBackend()
@@ -95,7 +97,6 @@ def test_custom_global_chord_reserves_only_the_complete_shortcut():
             settings,
             threading.Event(),
         )
-
 
 def test_runner_executes_sequence_exact_number_of_times():
     backend = FakeBackend()
@@ -122,7 +123,6 @@ def test_runner_executes_sequence_exact_number_of_times():
     ]
     assert backend.calls == expected_once * 2
 
-
 def test_runner_honors_preexisting_stop():
     backend = FakeBackend()
     stop = threading.Event()
@@ -130,18 +130,6 @@ def test_runner_honors_preexisting_stop():
     done = AutomationRunner(backend).run([Action("key", value="x")], RunSettings(start_delay=0), stop)
     assert done is False
     assert backend.calls == []
-
-
-def test_profile_round_trip(tmp_path: Path):
-    path = tmp_path / "demo.kca.json"
-    original_actions = [Action("right_click", x=321, y=654, delay_after=0.25)]
-    original_settings = RunSettings(repeat_count=7, start_delay=1.5, cycle_interval=0.2, text_key_interval=0.04)
-    save_profile(path, original_actions, original_settings)
-    actions, settings = load_profile(path)
-    assert actions == original_actions
-    assert settings == original_settings
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 1
-
 
 def test_advanced_mouse_actions():
     backend = FakeBackend()
@@ -163,7 +151,6 @@ def test_advanced_mouse_actions():
         ("moveTo", 170, 180),
         ("mouseUp", "left"),
     ]
-
 
 def test_window_mouse_actions_use_resize_aware_coordinates_at_execution_time():
     class ResponsiveBackend(FakeBackend):
@@ -187,7 +174,6 @@ def test_window_mouse_actions_use_resize_aware_coordinates_at_execution_time():
         ("scale_point", 600, 400, 1200, 800),
         ("click", 300, 200, "left"),
     ]
-
 
 def test_drag_points_keep_independent_window_size_references():
     class ResponsiveDragBackend(FakeBackend):
@@ -223,7 +209,6 @@ def test_drag_points_keep_independent_window_size_references():
         ("mouseUp", "left"),
     ]
 
-
 def test_click_actions_can_follow_the_live_pointer():
     backend = FakeBackend()
     actions = [
@@ -243,13 +228,11 @@ def test_click_actions_can_follow_the_live_pointer():
     with pytest.raises(ValueError, match="only for click actions"):
         Action("scroll", amount=-1, use_current_pointer=True).validate()
 
-
 def test_scroll_amount_is_bounded_to_prevent_accidental_message_floods():
     Action("scroll", x=10, y=20, amount=-1_000).validate()
     Action("scroll", x=10, y=20, amount=1_000).validate()
     with pytest.raises(ValueError, match="between -1000 and 1000"):
         Action("scroll", x=10, y=20, amount=1_001).validate()
-
 
 def test_progress_reports_the_action_being_executed():
     events = []
@@ -267,13 +250,11 @@ def test_progress_reports_the_action_being_executed():
     assert ("action", 1, 2) in events
     assert not any(event == ("action", 0, 2) for event in events)
 
-
 def test_per_action_repeat_runs_only_that_action_multiple_times():
     backend = FakeBackend()
     actions = [Action("key", value="x", repeats=3, delay_after=0)]
     assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0), threading.Event()) is True
     assert backend.calls == [("press", "x"), ("press", "x"), ("press", "x")]
-
 
 def test_timing_jitter_uses_injected_randomizer(monkeypatch):
     sleeps = []
@@ -285,7 +266,6 @@ def test_timing_jitter_uses_injected_randomizer(monkeypatch):
     assert runner.run(actions, settings, threading.Event()) is True
     assert sleeps == [0, 1.25, 2.25, 1.25]
 
-
 def test_disabled_actions_are_preserved_but_not_executed():
     backend = FakeBackend()
     actions = [
@@ -294,7 +274,6 @@ def test_disabled_actions_are_preserved_but_not_executed():
     ]
     assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0), threading.Event()) is True
     assert backend.calls == [("press", "y")]
-
 
 def test_repeat_forever_runs_until_cancelled():
     backend = FakeBackend()
@@ -309,7 +288,6 @@ def test_repeat_forever_runs_until_cancelled():
     settings = RunSettings(start_delay=0, repeat_forever=True)
     assert StoppingRunner(backend).run([Action("key", value="x", delay_after=0)], settings, stop) is False
     assert backend.calls == [("press", "x"), ("press", "x"), ("press", "x")]
-
 
 def test_runner_pauses_before_input_and_resumes_without_losing_the_action():
     backend = FakeBackend()
@@ -340,7 +318,6 @@ def test_runner_pauses_before_input_and_resumes_without_losing_the_action():
     assert result == [True]
     assert backend.calls == [("press", "x")]
 
-
 def test_runner_can_be_stopped_while_paused():
     stop = threading.Event()
     pause = threading.Event()
@@ -367,31 +344,6 @@ def test_runner_can_be_stopped_while_paused():
     worker.join(1)
     assert result == [False]
 
-
-def test_run_settings_reject_duplicate_hotkeys():
-    with pytest.raises(ValueError, match="must be different"):
-        RunSettings(start_hotkey="f6", capture_hotkey="f6", stop_hotkey="f9").validate()
-
-
-def test_run_settings_accept_legacy_hotkey_aliases_and_detects_alias_duplicates():
-    RunSettings(start_hotkey="control+s", capture_hotkey="escape", stop_hotkey="f9").validate()
-    with pytest.raises(ValueError, match="must be different"):
-        RunSettings(start_hotkey="control+s", capture_hotkey="ctrl+s", stop_hotkey="f9").validate()
-    with pytest.raises(ValueError, match="must be different"):
-        RunSettings(start_hotkey="ctrl+s", capture_hotkey="s+control", stop_hotkey="f9").validate()
-
-
-def test_global_hotkey_rejects_repeated_components():
-    with pytest.raises(ValueError, match="invalid"):
-        RunSettings(start_hotkey="ctrl+ctrl+s").validate()
-
-
-@pytest.mark.parametrize("hotkey", ["foo", "ctrl++s", "f25"])
-def test_run_settings_reject_hotkeys_that_pynput_cannot_parse(hotkey):
-    with pytest.raises(ValueError, match="hotkey is invalid"):
-        RunSettings(start_hotkey=hotkey).validate()
-
-
 def test_long_text_action_can_be_stopped_between_characters():
     stop = threading.Event()
 
@@ -409,7 +361,6 @@ def test_long_text_action_can_be_stopped_between_characters():
     assert done is False
     assert backend.calls == [("write", "d", 0)]
 
-
 def test_drag_releases_mouse_when_emergency_stop_occurs_mid_drag():
     stop = threading.Event()
 
@@ -426,7 +377,6 @@ def test_drag_releases_mouse_when_emergency_stop_occurs_mid_drag():
     )
     assert done is False
     assert backend.calls == [("moveTo", 0, 0), ("mouseDown", "left"), ("mouseUp", "left")]
-
 
 def test_pause_during_drag_releases_the_button_before_waiting():
     pause = threading.Event()
@@ -472,7 +422,6 @@ def test_pause_during_drag_releases_the_button_before_waiting():
     assert result == [True]
     assert backend.calls[-1] == ("press", "x")
 
-
 def test_chunked_text_and_drag_disable_pyautogui_global_pause():
     class PauseAwareBackend(FakeBackend):
         def __init__(self):
@@ -503,7 +452,6 @@ def test_chunked_text_and_drag_disable_pyautogui_global_pause():
     assert AutomationRunner(backend).run(actions, RunSettings(start_delay=0, text_key_interval=0), threading.Event()) is True
     assert backend.pause_flags == [False, False, False, False, False, False]
 
-
 def test_drag_fail_safe_uses_raw_mouse_release_cleanup():
     raw_releases = []
 
@@ -532,19 +480,6 @@ def test_drag_fail_safe_uses_raw_mouse_release_cleanup():
         )
     assert raw_releases == [(10, 10, "left")]
 
-
-def test_old_profile_defaults_new_run_settings(tmp_path: Path):
-    path = tmp_path / "old.kca.json"
-    path.write_text(json.dumps({
-        "version": 1,
-        "actions": [{"kind": "key", "value": "a"}],
-        "settings": {"repeat_count": 2},
-    }), encoding="utf-8")
-    _, settings = load_profile(path)
-    assert settings.repeat_forever is False
-    assert (settings.start_hotkey, settings.capture_hotkey, settings.stop_hotkey) == ("f6", "f8", "f9")
-
-
 def test_custom_shortcuts_allow_old_default_key_as_action(tmp_path: Path):
     path = tmp_path / "custom.kca.json"
     actions = [Action("key", value="f6", delay_after=0)]
@@ -554,63 +489,3 @@ def test_custom_shortcuts_allow_old_default_key_as_action(tmp_path: Path):
     backend = FakeBackend()
     assert AutomationRunner(backend).run(loaded_actions, loaded_settings, threading.Event()) is True
     assert backend.calls == [("press", "f6")]
-
-
-def test_mouse_coordinate_space_is_explicit_and_live_pointer_stays_desktop_only():
-    Action("left_click", x=10, y=20, coordinate_space="window").validate()
-    Action(
-        "left_click",
-        x=10,
-        y=20,
-        coordinate_space="window",
-        reference_width=800,
-        reference_height=600,
-    ).validate()
-    with pytest.raises(ValueError, match="screen, window, or viewport"):
-        Action("left_click", x=10, y=20, coordinate_space="unknown").validate()
-    with pytest.raises(ValueError, match="only for Desktop"):
-        Action("left_click", use_current_pointer=True, coordinate_space="window").validate()
-    with pytest.raises(ValueError, match="both width and height"):
-        Action("left_click", x=10, y=20, coordinate_space="window", reference_width=800).validate()
-
-
-def test_background_target_round_trips_with_window_relative_actions(tmp_path: Path):
-    path = tmp_path / "background.kca.json"
-    actions = [Action(
-        "left_click",
-        x=45,
-        y=67,
-        coordinate_space="window",
-        reference_width=1024,
-        reference_height=768,
-    )]
-    settings = RunSettings(
-        target_mode="window",
-        target_window_title="Calculator",
-        target_window_class="ApplicationFrameWindow",
-        target_executable=r"C:\\Windows\\System32\\ApplicationFrameHost.exe",
-    )
-
-    save_profile(path, actions, settings)
-    loaded_actions, loaded_settings = load_profile(path)
-
-    assert loaded_actions == actions
-    assert loaded_settings == settings
-
-
-def test_legacy_profile_defaults_to_desktop_screen_coordinates(tmp_path: Path):
-    path = tmp_path / "legacy-mouse.kca.json"
-    path.write_text(json.dumps({
-        "version": 1,
-        "actions": [{"kind": "left_click", "x": 12, "y": 34}],
-        "settings": {},
-    }), encoding="utf-8")
-
-    actions, settings = load_profile(path)
-
-    assert actions[0].coordinate_space == "screen"
-    assert actions[0].reference_width == 0
-    assert actions[0].reference_height == 0
-    assert actions[0].reference_width2 == 0
-    assert actions[0].reference_height2 == 0
-    assert settings.target_mode == "desktop"

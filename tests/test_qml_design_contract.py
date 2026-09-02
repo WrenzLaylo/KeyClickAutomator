@@ -16,7 +16,9 @@ CAPTURE_OVERLAY = (Path(__file__).parents[1] / "capture_overlay.py").read_text(e
 
 
 def test_brand_uses_packaged_logo_instead_of_placeholder_monogram():
-    assert 'source: "../assets/app-logo-transparent.png"' in QML
+    # The prefix depends on how deep the header file sits; that the path resolves
+    # is what test_split_qml_files_reference_assets_from_their_own_directory checks.
+    assert 'app-logo-transparent.png"' in QML
     assert 'objectName: "brandLogo"' in QML
     assert 'text: "K"' not in QML
 
@@ -101,8 +103,8 @@ def test_navigation_hover_stays_neutral_and_record_buttons_do_not_overflow():
     assert "property bool navStyle" not in QML
     assert "control.navStyle" not in QML
     assert QML.count("implicitWidth: 106") == 3
-    assert QML.count("activeNeutral: root.shortcutRecordingTarget ===") == 3
-    assert 'text: root.shortcutRecordingTarget === "start" ? "Listening" : "Record"' in QML
+    assert QML.count("activeNeutral: app.shortcutRecordingTarget ===") == 3
+    assert 'text: app.shortcutRecordingTarget === "start" ? "Listening" : "Record"' in QML
 
 
 def test_compact_shortcut_dock_and_run_controls_have_stable_visual_contracts():
@@ -212,8 +214,8 @@ def test_sequence_actions_support_pointer_dragging_and_button_reordering():
     assert 'objectName: "actionDragHandle_" + actionCard.actionIndex' in QML
     assert 'objectName: "sequenceDropIndicator_" + actionCard.actionIndex' in QML
     assert "DragHandler" in QML
-    assert "root.beginSequenceDrag(actionCard.actionIndex)" in QML
-    assert "root.updateSequenceDrag(actionCard.actionIndex, translation.y)" in QML
+    assert "app.beginSequenceDrag(actionCard.actionIndex)" in QML
+    assert "app.updateSequenceDrag(actionCard.actionIndex, translation.y)" in QML
     assert "controller.moveActionTo(index, target)" in QML
     assert "controller.moveAction(controller.selectedIndex, -1)" in QML
     assert "controller.moveAction(controller.selectedIndex, 1)" in QML

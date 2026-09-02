@@ -65,7 +65,7 @@ Dialog {
                         dialog.close()
                         if (controller.selectedIndex >= 0) {
                             app.editorIndex = controller.selectedIndex
-                            editor.loadAction(controller.selectedIndex)
+                            app.loadActionIntoEditor(controller.selectedIndex)
                         }
                     }
                 }

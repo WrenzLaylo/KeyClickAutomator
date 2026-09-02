@@ -349,18 +349,15 @@ class RunningMixin(ControllerSignals):
         self.hotkeyStopRequested.emit()
 
     def _start_parallel_queue(self) -> bool:
+        # Every session starts: startRunQueue reloads each one, which resets its
+        # state to "queued", bails out if any of them failed to load, and only
+        # gets here with nothing else running. There is no "none of them
+        # started" case left to recover from.
         if not self._queue_active or self._queue_mode != "parallel":
             return False
-        started = 0
         for session in self._run_queue:
-            if session.state == "queued" and self._start_session(session, parallel=True):
-                started += 1
-        if started == 0:
-            self._queue_active = False
-            self.runQueueRunningChanged.emit()
-            self._set_running(False)
-            self._restore_standard_hotkeys()
-            return False
+            if session.state == "queued":
+                self._start_session(session, parallel=True)
         self._update_parallel_status()
         return True
 

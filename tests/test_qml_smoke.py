@@ -8,6 +8,8 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+import pyautogui
+
 import qt_controller
 from qt_app import build_engine, create_application
 from window_backend import WindowInfo
@@ -985,7 +987,7 @@ def test_inspector_tracks_the_selected_action_after_deletion():
 
 
 def test_record_pointer_button_arms_a_frozen_picker_until_a_point_is_clicked(monkeypatch):
-    monkeypatch.setattr(qt_controller.pyautogui, "position", lambda: SimpleNamespace(x=700, y=420))
+    monkeypatch.setattr(pyautogui, "position", lambda: SimpleNamespace(x=700, y=420))
     engine, controller = build_engine(start_hotkeys=False)
     window = engine.rootObjects()[0]
     picker = window.findChild(QQuickItem, "actionTypePicker")

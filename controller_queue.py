@@ -127,13 +127,6 @@ class QueueMixin(ControllerSignals):
         self.toast.emit(f"Queued {session.profile_name}", "success")
         return True
 
-    @Slot(result=bool)
-    def enqueueCurrentProfile(self) -> bool:
-        if not self._current_profile_path:
-            self.toast.emit("Save this profile before adding it to the run queue.", "error")
-            return False
-        return self.enqueueProfile(self._current_profile_path)
-
     @Slot(str, result=bool)
     def setRunQueueMode(self, mode: str) -> bool:
         normalized = str(mode).strip().casefold()

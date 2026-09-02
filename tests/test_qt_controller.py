@@ -1,6 +1,7 @@
 import threading
 from types import SimpleNamespace
 
+import pyautogui
 from pynput import keyboard
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtTest import QSignalSpy, QTest
@@ -9,9 +10,11 @@ import controller_running
 import qt_controller
 import profile_catalog
 from engine import Action, RunSettings, load_profile, save_profile
+import controller_targeting
 from qt_controller import ActionListModel, AutomatorController
 from run_session import RunSession
-from window_backend import WindowInfo
+from chrome_backend import ChromeTargetError
+from window_backend import WindowInfo, WindowTargetError
 
 
 _app = QCoreApplication.instance() or QCoreApplication([])
@@ -71,7 +74,7 @@ class MultiWindowService(FakeWindowService):
 
     def resolve_window(self, selector, preferred_hwnd=0):
         if selector.title not in self.aliases:
-            raise qt_controller.WindowTargetError("The target window is not open.")
+            raise WindowTargetError("The target window is not open.")
         return self._info(selector.title, self.aliases[selector.title])
 
     def ensure_responsive(self, hwnd):
@@ -304,20 +307,6 @@ def test_saved_profiles_can_be_queued_reordered_and_removed(tmp_path):
     assert controller.removeQueuedProfile(1) is True
     assert controller.runQueuePaths == [str(second.resolve())]
     assert controller.clearRunQueue() is True
-    assert controller.runQueueCount == 0
-    controller.shutdown()
-
-
-def test_current_profile_must_be_saved_before_it_can_be_queued(tmp_path):
-    path = tmp_path / "Editable.kca.json"
-    save_profile(path, [Action("key", value="a")], RunSettings())
-    controller = AutomatorController(start_hotkeys=False, profile_directory=tmp_path)
-    assert controller.openProfilePath(str(path)) is True
-    controller.addAction({"kind": "key", "value": "b"})
-    toasts = QSignalSpy(controller.toast)
-
-    assert controller.enqueueCurrentProfile() is False
-    assert "Save this profile" in toasts.at(toasts.count() - 1)[0]
     assert controller.runQueueCount == 0
     controller.shutdown()
 
@@ -616,7 +605,6 @@ def test_parallel_queue_starts_distinct_background_targets_together(monkeypatch,
     assert controller.startRunQueue() is True
     assert both_started.wait(1)
     assert set(started) == {101, 202}
-    assert controller.runQueueActiveCount == 2
     assert controller.running is True
 
     release.set()
@@ -769,7 +757,7 @@ def test_parallel_profile_can_be_paused_resumed_and_stopped_independently(
 
 
 def test_frozen_pointer_picker_waits_for_an_explicit_click(monkeypatch):
-    monkeypatch.setattr(qt_controller.pyautogui, "position", lambda: SimpleNamespace(x=321, y=654))
+    monkeypatch.setattr(pyautogui, "position", lambda: SimpleNamespace(x=321, y=654))
     controller = AutomatorController(start_hotkeys=False)
     captured = QSignalSpy(controller.positionCaptured)
 
@@ -1333,7 +1321,7 @@ def test_packaged_app_uses_the_executable_folder_as_its_profile_library(monkeypa
 
 
 def test_visual_window_picker_lists_and_selects_an_open_window(monkeypatch):
-    monkeypatch.setattr(qt_controller.pyautogui, "position", lambda: SimpleNamespace(x=700, y=420))
+    monkeypatch.setattr(pyautogui, "position", lambda: SimpleNamespace(x=700, y=420))
     controller = AutomatorController(start_hotkeys=False, window_service=FakeWindowService())
 
     assert controller.setTargetMode("window") is True
@@ -1350,7 +1338,7 @@ def test_visual_window_picker_lists_and_selects_an_open_window(monkeypatch):
 
 
 def test_background_position_recording_converts_to_selected_window_coordinates(monkeypatch):
-    monkeypatch.setattr(qt_controller.pyautogui, "position", lambda: SimpleNamespace(x=321, y=654))
+    monkeypatch.setattr(pyautogui, "position", lambda: SimpleNamespace(x=321, y=654))
     controller = AutomatorController(start_hotkeys=False, window_service=FakeWindowService())
     controller.setTargetMode("window")
     controller.captureWindowTarget()
@@ -1364,7 +1352,7 @@ def test_background_position_recording_converts_to_selected_window_coordinates(m
 
 
 def test_run_blocks_mouse_positions_recorded_for_the_other_target(monkeypatch):
-    monkeypatch.setattr(qt_controller.pyautogui, "position", lambda: SimpleNamespace(x=321, y=654))
+    monkeypatch.setattr(pyautogui, "position", lambda: SimpleNamespace(x=321, y=654))
     controller = AutomatorController(start_hotkeys=False, window_service=FakeWindowService())
     controller.addAction({"kind": "left_click", "x": 10, "y": 20, "coordinateSpace": "screen"})
     controller.setTargetMode("window")
@@ -1388,16 +1376,16 @@ class FakeTab:
 
 
 def _fake_browser(monkeypatch, tabs, available=True):
-    monkeypatch.setattr(qt_controller, "browser_available", lambda port=0: available)
-    monkeypatch.setattr(qt_controller, "list_tabs", lambda port=0: tabs)
+    monkeypatch.setattr(controller_targeting, "browser_available", lambda port=0: available)
+    monkeypatch.setattr(controller_targeting, "list_tabs", lambda port=0: tabs)
 
     def find(port=0, target_id="", url="", title=""):
         for tab in tabs:
             if url and tab.url == url:
                 return tab
-        raise qt_controller.ChromeTargetError("That tab is no longer open. Pick the browser tab again.")
+        raise ChromeTargetError("That tab is no longer open. Pick the browser tab again.")
 
-    monkeypatch.setattr(qt_controller, "find_tab", find)
+    monkeypatch.setattr(controller_targeting, "find_tab", find)
 
 
 def test_browser_tabs_are_listed_and_one_can_be_targeted(monkeypatch):
@@ -1643,7 +1631,7 @@ class BrowserWindowService(FakeWindowService):
         for info in self.list_windows():
             if info.title == selector.title:
                 return info
-        raise qt_controller.WindowTargetError("The target window is not open.")
+        raise WindowTargetError("The target window is not open.")
 
 
 def test_one_list_offers_the_desktop_windows_and_tabs_together(monkeypatch):

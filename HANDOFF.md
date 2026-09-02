@@ -1,11 +1,12 @@
-# Handoff — 3.5.0 branch
+# Handoff — 3.5.0
 
-Everything below is on `feat/runner-tabs-and-fixes`, 12 commits ahead of `main`,
-pushed and in sync with origin. **236 tests pass.** `main` is untouched and there
-is no `v3.5.0` tag yet (latest tag is `v3.4.4`).
+All of this is on `main` now: `feat/runner-tabs-and-fixes` was fast-forwarded in
+at 21 commits. **240 tests pass.** There is still no `v3.5.0` tag (latest is
+`v3.4.4`), and the tabbed navigation below was merged with its verdict still
+open — see §1a.
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q      # 236 passed
+.venv\Scripts\python.exe -m pytest -q      # 240 passed
 .venv\Scripts\python.exe qt_app.py         # run it
 ```
 
@@ -26,6 +27,10 @@ Do **not** redesign this from a mockup. That is exactly how it went wrong: a
 picture was approved, the build was validated against a headless renderer and a
 green suite, and it was still confusing in the hand. Watch the owner do one real
 task instead.
+
+Merging to `main` did not settle this. The tabs and the refactor that followed
+them are interleaved across the 21 commits, so backing the navigation out is not
+a matter of reverting the merge — it would have to be a deliberate change.
 
 **b. The release is staged but unpublished.** See §3.
 

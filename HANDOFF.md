@@ -31,20 +31,16 @@ task instead.
 
 ---
 
-## 2. Refactor: unfinished
+## 2. Refactor: done
 
-The goal is **no file over 600 lines**. Every QML file and every source module is
-now under it. Four remain — one module and three test files:
+**No file in the project is over 600 lines.** The largest is `chrome_backend.py`
+at 556. This section is kept for the traps below, which apply to any future
+split, not because there is work left in it.
 
-```
-1692  tests/test_qt_controller.py
-1317  tests/test_qml_smoke.py
- 822  controller_running.py
- 616  tests/test_engine.py
-```
-
-Already split: `Main.qml` 3504→1958→**456**, `qt_controller.py` 2956→1383→**528**,
-`window_backend.py` 866→299, and `controller_running.py` 1071→822.
+The whole arc: `Main.qml` 3504→1958→**456**, `qt_controller.py` 2956→1383→**530**,
+`controller_running.py` 1071→822→**526**, `window_backend.py` 866→299,
+`tests/test_qt_controller.py` 1692→**six files**, `tests/test_qml_smoke.py`
+1317→**six files**, `tests/test_engine.py` 616→**491 + 113**.
 
 `Main.qml` came apart into `components/AppHeader.qml` (127),
 `components/RunBar.qml` (153), `pages/SequencePage.qml` (511), and the inspector,
@@ -58,11 +54,21 @@ that write into its own fields; only `onToast` stayed on the root.
 (545, windows, browser tabs and the unified picker). What is left is the object's
 own wiring — construction, profile and draft state, run settings, and hotkeys.
 
-### What each remaining split needs
+`controller_running.py` gave up `controller_progress.py` (315) — status, progress
+and the completion report, everything that runs after the worker is already
+going. The controller is now eight mixins over one QObject.
 
-- **`controller_running.py` → ~450.** Split sessions/workers from progress and
-  completion reporting.
-- **Test files.** Split to mirror the source modules.
+The test files were cut to mirror the modules: six `test_controller_*.py`, six
+`test_qml_*.py`, and `test_run_settings.py` split off from the engine. Shared
+fakes live in `tests/controller_fakes.py` and `tests/qml_harness.py`.
+
+`tests/conftest.py` is new and load-bearing. The Qt application used to be
+created by whichever test module imported first, which depended on alphabetical
+collection order: the controller tests ask for a `QCoreApplication` and the QML
+tests for a `QApplication`, and a `QCoreApplication` arriving first leaves the
+QML tests with no widget support. Adding a test file whose name sorted early
+would have broken tests that never changed. conftest creates one `QApplication`
+before anything else, so filenames are free again.
 
 ### How the existing splits work
 

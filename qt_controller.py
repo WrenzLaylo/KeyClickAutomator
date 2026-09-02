@@ -44,6 +44,7 @@ from controller_actions import ActionListModel, ActionsMixin
 from controller_capture import CaptureMixin
 from controller_signals import ControllerSignals
 from controller_profiles import ProfilesMixin
+from controller_progress import ProgressMixin
 from controller_queue import QueueMixin
 from controller_running import MAX_PARALLEL_SESSIONS, RunningMixin
 from controller_targeting import TargetingMixin
@@ -60,6 +61,7 @@ class AutomatorController(
     TargetingMixin,
     QueueMixin,
     RunningMixin,
+    ProgressMixin,
     CaptureMixin,
     ProfilesMixin,
     QObject,

@@ -149,7 +149,7 @@ class ActionListModel(QAbstractListModel):
         self.dataChanged.emit(model_index, model_index, roles)
 
 
-class ActionsMixin:
+class ActionsMixin(ControllerSignals):
     """Reading and editing the action list.
 
     Not a QObject: PySide6 still registers these Property and Slot objects as

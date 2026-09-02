@@ -30,7 +30,7 @@ from window_backend import (
 )
 
 
-class TargetingMixin:
+class TargetingMixin(ControllerSignals):
     """Everything behind the one picker: windows, browser tabs, the desktop."""
 
     @Property(bool, notify=ControllerSignals.windowPickStateChanged)
